@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ── Tenancy ──────────────────────────────────────────────────────────────
+
+model Workspace {
+  id             String   @id @default(uuid())
+  name           String
+  workspaceCode  String   @unique
+  operationalStart String @default("06:00") // HH:mm, configurable matrix window
+  operationalEnd   String @default("22:00")
+  onboardingStep   Int    @default(0) // 0 = not started, 3 = complete
+  createdAt      DateTime @default(now())
+
+  adminUsers  AdminUser[]
+  employees   Employee[]
+  sections    Section[]
+  shifts      Shift[]
+}
+
+model AdminUser {
+  id           String   @id @default(uuid())
+  workspaceId  String
+  email        String
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([workspaceId, email])
+}
+
+model Employee {
+  id          String   @id @default(uuid())
+  workspaceId String
+  name        String
+  pinHash     String
+  role        String   @default("Employee")
+  createdAt   DateTime @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  assignments CellStaffAssignment[]
+
+  @@index([workspaceId])
+}
+
+// ── Layout engine: Section -> Location -> SubRow ────────────────────────
+// These three models ARE the entire layout engine. No industry-specific
+// naming is permitted here or anywhere downstream — all display labels
+// are admin-entered strings stored in `name`/`label`.
+
+model Section {
+  id          String   @id @default(uuid())
+  workspaceId String
+  name        String
+  sortOrder   Int      @default(0)
+
+  workspace Workspace  @relation(fields: [workspaceId], references: [id])
+  locations Location[]
+
+  @@index([workspaceId])
+}
+
+model Location {
+  id        String   @id @default(uuid())
+  sectionId String
+  name      String
+  sortOrder Int      @default(0)
+
+  section Section  @relation(fields: [sectionId], references: [id])
+  subRows SubRow[]
+
+  @@index([sectionId])
+}
+
+// SQLite has no native enum support in Prisma; dataType/statusValue are
+// plain strings constrained to a union type in the TS layer (see src/types.ts).
+// Valid dataType values: BADGE | STAFF | TEXT | LINK | FILE | STATUS
+
+model SubRow {
+  id         String   @id @default(uuid())
+  locationId String
+  label      String
+  dataType   String
+  sortOrder  Int      @default(0)
+  config     String   @default("{}") // type-specific JSON, e.g. badge color palette
+
+  location   Location    @relation(fields: [locationId], references: [id])
+  shifts     Shift[]
+  cellValues CellValue[]
+
+  @@index([locationId])
+}
+
+// ── Time blocks & cell data ──────────────────────────────────────────────
+
+model Shift {
+  id          String   @id @default(uuid())
+  workspaceId String
+  subRowId    String
+  date        String   // YYYY-MM-DD
+  startTime   String   // HH:mm
+  endTime     String   // HH:mm
+
+  workspace  Workspace   @relation(fields: [workspaceId], references: [id])
+  subRow     SubRow      @relation(fields: [subRowId], references: [id])
+  cellValues CellValue[]
+
+  @@index([workspaceId])
+  @@index([subRowId, date])
+}
+
+// Valid statusValue values: SCHEDULED | IN_PROGRESS | COMPLETED
+
+model CellValue {
+  id         String @id @default(uuid())
+  shiftId    String
+  subRowId   String
+
+  textValue   String?
+  badgeLabel  String?
+  badgeColor  String?
+  statusValue String?
+  linkUrl     String?
+
+  shift Shift  @relation(fields: [shiftId], references: [id])
+  subRow SubRow @relation(fields: [subRowId], references: [id])
+
+  staffAssignments CellStaffAssignment[]
+  fileUploads      FileUpload[]
+
+  @@unique([shiftId, subRowId])
+}
+
+model CellStaffAssignment {
+  id          String @id @default(uuid())
+  cellValueId String
+  employeeId  String
+
+  cellValue CellValue @relation(fields: [cellValueId], references: [id])
+  employee  Employee  @relation(fields: [employeeId], references: [id])
+
+  @@unique([cellValueId, employeeId])
+}
+
+model FileUpload {
+  id          String   @id @default(uuid())
+  cellValueId String
+  filename    String
+  url         String
+  uploadedAt  DateTime @default(now())
+
+  cellValue CellValue @relation(fields: [cellValueId], references: [id])
+}
