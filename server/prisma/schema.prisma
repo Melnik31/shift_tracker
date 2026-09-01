@@ -22,16 +22,26 @@ model Workspace {
   employees   Employee[]
   sections    Section[]
   shifts      Shift[]
+  payrollPeriods    PayrollPeriod[]
+  payrollAdjustments PayrollAdjustment[]
+  payrollPeriodReopens PayrollPeriodReopen[]
 }
 
+// SQLite has no native Prisma enum support (see dataType/statusValue note
+// below), so role is a plain string constrained to a union type in the TS
+// layer — see ROLES in src/types.ts. Valid values: COACH | DIRECTOR | ADMIN | CEO.
+// Existing rows default to ADMIN on migration; reassign manually afterward.
 model AdminUser {
   id           String   @id @default(uuid())
   workspaceId  String
   email        String
   passwordHash String
+  role         String   @default("ADMIN")
   createdAt    DateTime @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id])
+  createdAdjustments PayrollAdjustment[]
+  createdReopens PayrollPeriodReopen[]
 
   @@unique([workspaceId, email])
 }
@@ -46,6 +56,7 @@ model Employee {
 
   workspace   Workspace @relation(fields: [workspaceId], references: [id])
   assignments CellStaffAssignment[]
+  payrollAdjustments PayrollAdjustment[]
 
   @@index([workspaceId])
 }
@@ -107,6 +118,8 @@ model Shift {
   date        String   // YYYY-MM-DD
   startTime   String   // HH:mm
   endTime     String   // HH:mm
+  sessionType String?  // descriptive only, see SESSION_TYPES in src/types.ts; nullable so existing shifts are unaffected
+  cancelled   Boolean  @default(false)
 
   workspace  Workspace   @relation(fields: [workspaceId], references: [id])
   subRow     SubRow      @relation(fields: [subRowId], references: [id])
@@ -157,4 +170,67 @@ model FileUpload {
   uploadedAt  DateTime @default(now())
 
   cellValue CellValue @relation(fields: [cellValueId], references: [id])
+}
+
+// ── Payroll review ───────────────────────────────────────────────────────
+// Admin-only subsystem (requireRole('ADMIN')). Once a period is APPROVED,
+// shift data it covers is locked (see rejectIfLocked in src/lib/payrollLock.ts)
+// — corrections go through PayrollAdjustment instead of mutating history.
+
+model PayrollPeriod {
+  id          String    @id @default(uuid())
+  workspaceId String
+  start       String    // YYYY-MM-DD inclusive
+  end         String    // YYYY-MM-DD inclusive
+  status      String    @default("OPEN") // OPEN | REVIEWED | APPROVED — see PAYROLL_PERIOD_STATUSES in src/types.ts
+  createdAt   DateTime  @default(now())
+  reviewedAt  DateTime?
+  approvedAt  DateTime?
+
+  workspace   Workspace              @relation(fields: [workspaceId], references: [id])
+  adjustments PayrollAdjustment[]
+  reopens     PayrollPeriodReopen[]
+
+  @@index([workspaceId])
+}
+
+// Audit trail for reopening an APPROVED period (sets it back to OPEN). This
+// is for fixing test/incomplete data before a period is finalized for real —
+// distinct from PayrollAdjustment, which corrects genuinely locked history
+// without reopening it. Same audit shape as PayrollAdjustment (actor,
+// timestamp, required reason), minus the per-employee fields that don't apply.
+model PayrollPeriodReopen {
+  id          String   @id @default(uuid())
+  workspaceId String
+  periodId    String
+  reason      String
+  createdBy   String   // AdminUser id
+  createdAt   DateTime @default(now())
+
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id])
+  period         PayrollPeriod @relation(fields: [periodId], references: [id])
+  createdByAdmin AdminUser     @relation(fields: [createdBy], references: [id])
+
+  @@index([workspaceId])
+  @@index([periodId])
+}
+
+model PayrollAdjustment {
+  id           String   @id @default(uuid())
+  workspaceId  String
+  employeeId   String
+  periodId     String
+  deltaMinutes Int
+  reason       String
+  createdBy    String   // AdminUser id
+  createdAt    DateTime @default(now())
+
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id])
+  employee       Employee      @relation(fields: [employeeId], references: [id])
+  period         PayrollPeriod @relation(fields: [periodId], references: [id])
+  createdByAdmin AdminUser     @relation(fields: [createdBy], references: [id])
+
+  @@index([workspaceId])
+  @@index([periodId])
+  @@index([employeeId])
 }

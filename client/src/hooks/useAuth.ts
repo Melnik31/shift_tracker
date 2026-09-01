@@ -3,7 +3,7 @@ import { api, ApiError } from '../lib/api';
 
 export interface MeResponse {
   actorType: 'admin' | 'employee';
-  admin?: { id: string; email: string } | null;
+  admin?: { id: string; email: string; role: string } | null;
   employee?: { id: string; name: string; role: string } | null;
   workspace: { id: string; name: string; workspaceCode?: string; onboardingStep?: number };
 }

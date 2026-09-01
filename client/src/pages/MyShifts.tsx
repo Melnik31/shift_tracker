@@ -5,7 +5,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
 import { EmployeeDayShift, EmployeeDaySummary, EventSubRowInfo } from '../lib/types';
 import { formatTime12h } from '../lib/time';
-import { STATUS_COLORS } from '../lib/constants';
+import { STATUS_COLORS, SESSION_TYPE_COLORS } from '../lib/constants';
 
 type Range = 'day' | 'week' | 'upcoming';
 
@@ -99,8 +99,16 @@ function DayCard({ day, showBreakdown }: { day: EmployeeDaySummary; showBreakdow
                 {i < day.shifts.length - 1 && <span className="w-px flex-1 bg-slate-200 mt-1" />}
               </div>
               <div className="pb-2 min-w-0 flex-1">
-                <p className="text-sm font-medium text-slate-800">
+                <p className="text-sm font-medium text-slate-800 flex items-center gap-2">
                   {formatTime12h(s.startTime)}–{formatTime12h(s.endTime)}
+                  {s.sessionType && (
+                    <span
+                      className="inline-block rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
+                      style={{ backgroundColor: SESSION_TYPE_COLORS[s.sessionType] ?? '#64748b' }}
+                    >
+                      {s.sessionType}
+                    </span>
+                  )}
                 </p>
                 <p className="text-xs text-slate-500">
                   {s.sectionName} / {s.locationName} — {s.subRowLabel}

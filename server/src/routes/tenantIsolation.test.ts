@@ -124,8 +124,11 @@ describe('tenant isolation', () => {
 
     const { agent: empAgent } = await loginEmployee(app, 'TENANT-A', '3333');
 
-    expect((await empAgent.get('/api/layout')).status).toBe(401);
-    expect((await empAgent.post('/api/employees').send({ name: 'x', pin: '0000' })).status).toBe(401);
-    expect((await empAgent.get('/api/shifts').query({ date: '2026-08-17' })).status).toBe(401);
+    // These routes are requireRole(DIRECTOR, ADMIN, CEO)-gated; an employee
+    // session's implicit COACH role denies with 404, same as any other
+    // role mismatch (see roleAuth.test.ts) — not 401/403.
+    expect((await empAgent.get('/api/layout')).status).toBe(404);
+    expect((await empAgent.post('/api/employees').send({ name: 'x', pin: '0000' })).status).toBe(404);
+    expect((await empAgent.get('/api/shifts').query({ date: '2026-08-17' })).status).toBe(404);
   });
 });

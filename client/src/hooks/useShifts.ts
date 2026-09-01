@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { Shift } from '../lib/types';
+import { BulkShiftRequest, BulkShiftResponse, Shift } from '../lib/types';
 
 export function useShifts(date: string) {
   return useQuery<{ shifts: Shift[] }>({
@@ -24,4 +24,16 @@ export function useShiftMutations(date: string) {
   });
 
   return { addShift, deleteShift, invalidate };
+}
+
+// Not tied to a fixed date (like useShiftMutations is) because the "New
+// Shift Block" composer lets the date be changed independently of whatever
+// date the Matrix is currently viewing — invalidation targets whichever
+// date was actually submitted.
+export function useBulkShiftMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: BulkShiftRequest) => api.post<BulkShiftResponse>('/shifts/bulk', vars),
+    onSuccess: (_data, vars) => queryClient.invalidateQueries({ queryKey: ['shifts', vars.date] }),
+  });
 }

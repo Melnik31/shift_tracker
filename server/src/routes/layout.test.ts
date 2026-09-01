@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createApp } from '../app';
 import { resetDb } from '../testUtils/resetDb';
-import { signupAdmin } from '../testUtils/authHelpers';
+import { signupAdmin, loginEmployee, seedAdminWithRole } from '../testUtils/authHelpers';
 
 const app = createApp();
 
@@ -115,5 +115,30 @@ describe('layout CRUD (sections/locations/subrows)', () => {
     expect(tree.body.sections).toHaveLength(1);
     expect(tree.body.sections[0].locations).toHaveLength(1);
     expect(tree.body.sections[0].locations[0].subRows).toHaveLength(1);
+  });
+});
+
+describe('layout role gating (requireRole DIRECTOR/ADMIN/CEO)', () => {
+  it('404s a COACH session (employee login) on both a read and a mutation route', async () => {
+    const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'LROLE1' });
+    await agent.post('/api/employees').send({ name: 'Worker', pin: '1111' });
+    const { agent: coachAgent } = await loginEmployee(app, workspace.workspaceCode, '1111');
+
+    expect((await coachAgent.get('/api/layout')).status).toBe(404);
+    expect((await coachAgent.post('/api/layout/sections').send({ name: 'x' })).status).toBe(404);
+  });
+
+  it('DIRECTOR, ADMIN, and CEO all succeed identically on reads and mutations', async () => {
+    const { agent: adminAgent, workspace } = await signupAdmin(app, { workspaceCode: 'LROLE2' });
+    const directorAgent = await seedAdminWithRole(app, workspace.id, 'director@lrole2.example', 'DIRECTOR');
+    const ceoAgent = await seedAdminWithRole(app, workspace.id, 'ceo@lrole2.example', 'CEO');
+
+    for (const [label, agent] of [['admin', adminAgent], ['director', directorAgent], ['ceo', ceoAgent]] as const) {
+      expect((await agent.get('/api/layout')).status).toBe(200);
+      const created = await agent.post('/api/layout/sections').send({ name: `Section by ${label}` });
+      expect(created.status).toBe(201);
+      expect((await agent.patch(`/api/layout/sections/${created.body.id}`).send({ name: 'renamed' })).status).toBe(200);
+      expect((await agent.delete(`/api/layout/sections/${created.body.id}`)).status).toBe(200);
+    }
   });
 });

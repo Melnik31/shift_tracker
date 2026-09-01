@@ -4,11 +4,14 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { prisma } from '../db';
-import { requireAdmin } from '../middleware/auth';
-import { STATUS_VALUES } from '../types';
+import { requireRole } from '../middleware/auth';
+import { STATUS_VALUES, SESSION_TYPES } from '../types';
+import { rejectIfLocked } from '../lib/payrollLock';
 
 const router = Router();
-router.use(requireAdmin);
+// TODO(campus-scoping): once Campus scoping exists, DIRECTOR access here
+// should narrow to their own campus only, rather than the whole workspace.
+router.use(requireRole('DIRECTOR', 'ADMIN', 'CEO'));
 
 const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -23,6 +26,29 @@ const upload = multer({
 
 async function subRowInWorkspace(subRowId: string, workspaceId: string) {
   return prisma.subRow.findFirst({ where: { id: subRowId, location: { section: { workspaceId } } } });
+}
+
+function isValidSessionType(sessionType: unknown): sessionType is string {
+  return (SESSION_TYPES as readonly string[]).includes(sessionType as string);
+}
+
+function isBulkRowFilled(dataType: string, row: Record<string, unknown>): boolean {
+  switch (dataType) {
+    case 'TEXT':
+      return typeof row.textValue === 'string' && row.textValue.trim() !== '';
+    case 'BADGE':
+      return typeof row.badgeLabel === 'string' && row.badgeLabel.trim() !== '';
+    case 'STATUS':
+      return typeof row.statusValue === 'string' && row.statusValue !== '';
+    case 'LINK':
+      return typeof row.linkUrl === 'string' && row.linkUrl.trim() !== '';
+    case 'STAFF':
+      return Array.isArray(row.staffEmployeeIds) && row.staffEmployeeIds.length > 0;
+    case 'FILE':
+      return row.hasFile === true;
+    default:
+      return false;
+  }
 }
 
 function cellValueInclude() {
@@ -49,12 +75,16 @@ router.get('/', async (req, res) => {
 // POST /api/shifts — creates a new shift block + an empty cell value for a sub-row.
 router.post('/', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
-  const { subRowId, date, startTime, endTime } = req.body ?? {};
+  const { subRowId, date, startTime, endTime, sessionType } = req.body ?? {};
   const subRow = await subRowInWorkspace(subRowId, workspaceId);
   if (!subRow) return res.status(404).json({ error: 'SubRow not found' });
   if (!date || !startTime || !endTime) return res.status(400).json({ error: 'date, startTime, endTime are required' });
+  if (sessionType !== undefined && sessionType !== null && !isValidSessionType(sessionType)) {
+    return res.status(400).json({ error: `sessionType must be one of ${SESSION_TYPES.join(', ')}` });
+  }
+  if (await rejectIfLocked(req, res, workspaceId, date)) return;
 
-  const shift = await prisma.shift.create({ data: { workspaceId, subRowId, date, startTime, endTime } });
+  const shift = await prisma.shift.create({ data: { workspaceId, subRowId, date, startTime, endTime, sessionType: sessionType ?? null } });
   const cellValue = await prisma.cellValue.create({ data: { shiftId: shift.id, subRowId } });
   const full = await prisma.shift.findUnique({
     where: { id: shift.id },
@@ -63,17 +93,103 @@ router.post('/', async (req, res) => {
   res.status(201).json(full);
 });
 
+// POST /api/shifts/bulk — "New Shift Block": one date/startTime/endTime/
+// sessionType shared across every SubRow under a Location, but one
+// Shift+CellValue created per SubRow that actually had something entered.
+// Rows are skipped (never overwritten) when the SubRow isn't in this
+// workspace, nothing was entered, or a shift already overlaps that window
+// on that SubRow — reported back per row rather than failing the request.
+router.post('/bulk', async (req, res) => {
+  const workspaceId = req.session.workspaceId!;
+  const { date, startTime, endTime, sessionType, rows } = req.body ?? {};
+  if (!date || !startTime || !endTime) return res.status(400).json({ error: 'date, startTime, endTime are required' });
+  if (sessionType !== undefined && sessionType !== null && !isValidSessionType(sessionType)) {
+    return res.status(400).json({ error: `sessionType must be one of ${SESSION_TYPES.join(', ')}` });
+  }
+  if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: 'rows must be a nonempty array' });
+  if (await rejectIfLocked(req, res, workspaceId, date)) return;
+
+  const created: { subRowId: string; shiftId: string; cellValueId: string }[] = [];
+  const skipped: { subRowId: string; reason: string }[] = [];
+
+  for (const row of rows) {
+    const subRowId = row && typeof row === 'object' ? row.subRowId : undefined;
+    if (!subRowId) {
+      skipped.push({ subRowId: String(subRowId ?? ''), reason: 'subRowId is required' });
+      continue;
+    }
+
+    const subRow = await subRowInWorkspace(subRowId, workspaceId);
+    if (!subRow) {
+      skipped.push({ subRowId, reason: 'SubRow not found' });
+      continue;
+    }
+    if (!isBulkRowFilled(subRow.dataType, row)) {
+      skipped.push({ subRowId, reason: 'Nothing entered' });
+      continue;
+    }
+    if (row.statusValue !== undefined && row.statusValue !== null && row.statusValue !== '' && !STATUS_VALUES.includes(row.statusValue)) {
+      skipped.push({ subRowId, reason: `statusValue must be one of ${STATUS_VALUES.join(', ')}` });
+      continue;
+    }
+
+    const conflict = await prisma.shift.findFirst({
+      where: { workspaceId, subRowId, date, startTime: { lt: endTime }, endTime: { gt: startTime } },
+    });
+    if (conflict) {
+      skipped.push({ subRowId, reason: 'Already scheduled' });
+      continue;
+    }
+
+    const shift = await prisma.shift.create({ data: { workspaceId, subRowId, date, startTime, endTime, sessionType: sessionType ?? null } });
+    const cellValue = await prisma.cellValue.create({
+      data: {
+        shiftId: shift.id,
+        subRowId,
+        ...(subRow.dataType === 'TEXT' ? { textValue: row.textValue } : {}),
+        ...(subRow.dataType === 'BADGE' ? { badgeLabel: row.badgeLabel, badgeColor: row.badgeColor } : {}),
+        ...(subRow.dataType === 'STATUS' ? { statusValue: row.statusValue } : {}),
+        ...(subRow.dataType === 'LINK' ? { linkUrl: row.linkUrl, textValue: row.textValue } : {}),
+      },
+    });
+
+    if (subRow.dataType === 'STAFF' && Array.isArray(row.staffEmployeeIds)) {
+      const validEmployees = await prisma.employee.findMany({
+        where: { id: { in: row.staffEmployeeIds }, workspaceId },
+        select: { id: true },
+      });
+      const validIds = new Set(validEmployees.map((e) => e.id));
+      for (const employeeId of row.staffEmployeeIds) {
+        if (validIds.has(employeeId)) {
+          await prisma.cellStaffAssignment.create({ data: { cellValueId: cellValue.id, employeeId } });
+        }
+      }
+    }
+
+    created.push({ subRowId, shiftId: shift.id, cellValueId: cellValue.id });
+  }
+
+  res.status(201).json({ created, skipped });
+});
+
 router.patch('/:id', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
   const existing = await prisma.shift.findFirst({ where: { id: req.params.id, workspaceId } });
   if (!existing) return res.status(404).json({ error: 'Shift not found' });
 
-  const { startTime, endTime } = req.body ?? {};
+  const { startTime, endTime, sessionType, cancelled } = req.body ?? {};
+  if (sessionType !== undefined && sessionType !== null && !isValidSessionType(sessionType)) {
+    return res.status(400).json({ error: `sessionType must be one of ${SESSION_TYPES.join(', ')}` });
+  }
+  if (await rejectIfLocked(req, res, workspaceId, existing.date)) return;
+
   const shift = await prisma.shift.update({
     where: { id: existing.id },
     data: {
       ...(startTime !== undefined ? { startTime } : {}),
       ...(endTime !== undefined ? { endTime } : {}),
+      ...(sessionType !== undefined ? { sessionType } : {}),
+      ...(cancelled !== undefined ? { cancelled: Boolean(cancelled) } : {}),
     },
   });
   res.json(shift);
@@ -83,6 +199,7 @@ router.delete('/:id', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
   const existing = await prisma.shift.findFirst({ where: { id: req.params.id, workspaceId } });
   if (!existing) return res.status(404).json({ error: 'Shift not found' });
+  if (await rejectIfLocked(req, res, workspaceId, existing.date)) return;
 
   const cellValues = await prisma.cellValue.findMany({ where: { shiftId: existing.id } });
   for (const cv of cellValues) {
@@ -99,7 +216,7 @@ router.delete('/:id', async (req, res) => {
 async function cellValueInWorkspace(cellValueId: string, workspaceId: string) {
   return prisma.cellValue.findFirst({
     where: { id: cellValueId, shift: { workspaceId } },
-    include: { subRow: true },
+    include: { subRow: true, shift: true },
   });
 }
 
@@ -107,6 +224,7 @@ router.patch('/cells/:id', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
   const existing = await cellValueInWorkspace(req.params.id, workspaceId);
   if (!existing) return res.status(404).json({ error: 'Cell not found' });
+  if (await rejectIfLocked(req, res, workspaceId, existing.shift.date)) return;
 
   const { textValue, badgeLabel, badgeColor, statusValue, linkUrl, staffEmployeeIds } = req.body ?? {};
 
@@ -149,6 +267,12 @@ router.post('/cells/:id/files', upload.single('file'), async (req, res) => {
   const existing = await cellValueInWorkspace(req.params.id, workspaceId);
   if (!existing) return res.status(404).json({ error: 'Cell not found' });
   if (!req.file) return res.status(400).json({ error: 'file is required' });
+  // multer already wrote the file to disk before this handler runs — clean it
+  // up on a lock rejection so a denied upload doesn't leave an orphan behind.
+  if (await rejectIfLocked(req, res, workspaceId, existing.shift.date)) {
+    fs.rm(path.join(UPLOAD_DIR, req.file.filename), { force: true }, () => {});
+    return;
+  }
 
   const fileUpload = await prisma.fileUpload.create({
     data: {
@@ -164,8 +288,10 @@ router.delete('/files/:id', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
   const file = await prisma.fileUpload.findFirst({
     where: { id: req.params.id, cellValue: { shift: { workspaceId } } },
+    include: { cellValue: { include: { shift: true } } },
   });
   if (!file) return res.status(404).json({ error: 'File not found' });
+  if (await rejectIfLocked(req, res, workspaceId, file.cellValue.shift.date)) return;
 
   const diskPath = path.join(UPLOAD_DIR, path.basename(file.url));
   fs.rm(diskPath, { force: true }, () => {});

@@ -3,12 +3,13 @@ import { useLayout } from '../hooks/useLayout';
 import { useShifts, useShiftMutations } from '../hooks/useShifts';
 import { useEmployees } from '../hooks/useEmployees';
 import { toMinutes, formatTime12h } from '../lib/time';
-import { OPERATIONAL_START, OPERATIONAL_END } from '../lib/constants';
+import { OPERATIONAL_START, OPERATIONAL_END, SESSION_TYPE_COLORS } from '../lib/constants';
 import { CellValue, Shift, SubRow } from '../lib/types';
 import CellBlock from '../components/CellBlock';
 import CellPopover from '../components/CellPopover';
 import ManageLayoutModal from '../components/ManageLayoutModal';
 import ManageTeamModal from '../components/ManageTeamModal';
+import NewShiftBlockModal from '../components/NewShiftBlockModal';
 import AppHeader from '../components/AppHeader';
 
 const ROW_HEIGHT = 52; // single-line cell content: BADGE, LINK, FILE, STATUS
@@ -40,6 +41,7 @@ export default function MatrixView() {
   const [zoom, setZoom] = useState(1);
   const [showManageLayout, setShowManageLayout] = useState(false);
   const [showManageTeam, setShowManageTeam] = useState(false);
+  const [showNewShiftBlock, setShowNewShiftBlock] = useState(false);
   const [openPopover, setOpenPopover] = useState<{
     shift: Shift;
     cellValue: CellValue;
@@ -135,6 +137,9 @@ export default function MatrixView() {
                 +
               </button>
             </div>
+            <button onClick={() => setShowNewShiftBlock(true)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
+              + New Shift Block
+            </button>
             <button onClick={() => setShowManageLayout(true)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
               Manage Layout
             </button>
@@ -212,11 +217,21 @@ export default function MatrixView() {
                       <button
                         key={shift.id}
                         onClick={(e) => openCellEditor(shift, row.subRow, e)}
-                        title={`${formatTime12h(shift.startTime)} – ${formatTime12h(shift.endTime)}`}
+                        title={
+                          shift.sessionType
+                            ? `${shift.sessionType} — ${formatTime12h(shift.startTime)} – ${formatTime12h(shift.endTime)}`
+                            : `${formatTime12h(shift.startTime)} – ${formatTime12h(shift.endTime)}`
+                        }
                         style={{ left, width, top: 4, height: rowHeight(row) - 8 }}
                         className="absolute rounded-md border border-slate-200 bg-white hover:border-slate-400 px-2 py-1 flex flex-col items-stretch min-w-0 overflow-hidden text-left shadow-sm"
                       >
-                        <span className="text-[9px] leading-tight text-slate-400 truncate flex-shrink-0">
+                        <span className="text-[9px] leading-tight text-slate-400 truncate flex-shrink-0 flex items-center gap-1">
+                          {shift.sessionType && (
+                            <span
+                              className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: SESSION_TYPE_COLORS[shift.sessionType] ?? '#64748b' }}
+                            />
+                          )}
                           {formatTime12h(shift.startTime)} – {formatTime12h(shift.endTime)}
                         </span>
                         <CellBlock cellValue={cellValue} subRow={row.subRow} />
@@ -244,6 +259,7 @@ export default function MatrixView() {
 
       {showManageLayout && <ManageLayoutModal onClose={() => setShowManageLayout(false)} />}
       {showManageTeam && <ManageTeamModal onClose={() => setShowManageTeam(false)} />}
+      {showNewShiftBlock && <NewShiftBlockModal date={date} onClose={() => setShowNewShiftBlock(false)} />}
     </div>
   );
 }

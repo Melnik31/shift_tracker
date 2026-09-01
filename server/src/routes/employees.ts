@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../db';
-import { requireAdmin } from '../middleware/auth';
+import { requireRole } from '../middleware/auth';
 
 const router = Router();
-router.use(requireAdmin);
+// TODO(campus-scoping): once Campus scoping exists, DIRECTOR access here
+// should narrow to their own campus only, rather than the whole workspace.
+router.use(requireRole('DIRECTOR', 'ADMIN', 'CEO'));
 
 router.get('/', async (req, res) => {
   const workspaceId = req.session.workspaceId!;

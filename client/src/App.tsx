@@ -6,6 +6,7 @@ import EmployeeLogin from './pages/EmployeeLogin';
 import Onboarding from './pages/Onboarding/Onboarding';
 import MatrixView from './pages/MatrixView';
 import DashboardView from './pages/DashboardView';
+import PayrollReview from './pages/PayrollReview';
 import MyShifts from './pages/MyShifts';
 import { useAuth } from './hooks/useAuth';
 
@@ -18,6 +19,15 @@ function RequireAdmin({ children }: { children: JSX.Element }) {
   if (isLoading) return <Loading />;
   if (!data || data.actorType !== 'admin') return <Navigate to="/admin/login" replace />;
   if ((data.workspace.onboardingStep ?? 3) < 3) return <Navigate to="/onboarding" replace />;
+  return children;
+}
+
+function RequireAdminRole({ children }: { children: JSX.Element }) {
+  const { data, isLoading } = useAuth();
+  if (isLoading) return <Loading />;
+  if (!data || data.actorType !== 'admin') return <Navigate to="/admin/login" replace />;
+  if ((data.workspace.onboardingStep ?? 3) < 3) return <Navigate to="/onboarding" replace />;
+  if (data.admin?.role !== 'ADMIN') return <Navigate to="/dashboard" replace />;
   return children;
 }
 
@@ -64,6 +74,14 @@ export default function App() {
           <RequireAdmin>
             <DashboardView />
           </RequireAdmin>
+        }
+      />
+      <Route
+        path="/payroll"
+        element={
+          <RequireAdminRole>
+            <PayrollReview />
+          </RequireAdminRole>
         }
       />
       <Route

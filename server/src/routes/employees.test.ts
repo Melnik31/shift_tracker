@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createApp } from '../app';
 import { resetDb } from '../testUtils/resetDb';
-import { signupAdmin, loginEmployee } from '../testUtils/authHelpers';
+import { signupAdmin, loginEmployee, seedAdminWithRole } from '../testUtils/authHelpers';
 
 const app = createApp();
 
@@ -78,5 +78,34 @@ describe('employees CRUD', () => {
     const { agent } = await signupAdmin(app);
     const created = await agent.post('/api/employees').send({ name: 'No Role', pin: '1234' });
     expect(created.body.role).toBe('Employee');
+  });
+});
+
+describe('employees role gating (requireRole DIRECTOR/ADMIN/CEO)', () => {
+  it('404s a COACH session (employee login) on both a read and a mutation route', async () => {
+    const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'EROLE1' });
+    await agent.post('/api/employees').send({ name: 'Worker', pin: '1111' });
+    const { agent: coachAgent } = await loginEmployee(app, workspace.workspaceCode, '1111');
+
+    expect((await coachAgent.get('/api/employees')).status).toBe(404);
+    expect((await coachAgent.post('/api/employees').send({ name: 'x', pin: '2222' })).status).toBe(404);
+  });
+
+  it('DIRECTOR, ADMIN, and CEO all succeed identically', async () => {
+    const { agent: adminAgent, workspace } = await signupAdmin(app, { workspaceCode: 'EROLE2' });
+    const directorAgent = await seedAdminWithRole(app, workspace.id, 'director@erole2.example', 'DIRECTOR');
+    const ceoAgent = await seedAdminWithRole(app, workspace.id, 'ceo@erole2.example', 'CEO');
+
+    for (const [label, agent] of [
+      ['admin', adminAgent],
+      ['director', directorAgent],
+      ['ceo', ceoAgent],
+    ] as const) {
+      expect((await agent.get('/api/employees')).status).toBe(200);
+      const created = await agent.post('/api/employees').send({ name: `Hired by ${label}`, pin: '9999' });
+      expect(created.status).toBe(201);
+      expect((await agent.patch(`/api/employees/${created.body.id}`).send({ role: 'Lead' })).status).toBe(200);
+      expect((await agent.delete(`/api/employees/${created.body.id}`)).status).toBe(200);
+    }
   });
 });

@@ -26,6 +26,7 @@ export interface EmployeeDayShift {
   date: string;
   startTime: string;
   endTime: string;
+  sessionType: string | null;
   subRowLabel: string;
   locationName: string;
   sectionName: string;
@@ -133,6 +134,7 @@ export async function getEmployeeDaySummaries(
         date: shift.date,
         startTime: shift.startTime,
         endTime: shift.endTime,
+        sessionType: shift.sessionType,
         subRowLabel: shift.subRow.label,
         locationName: shift.subRow.location.name,
         sectionName: shift.subRow.location.section.name,

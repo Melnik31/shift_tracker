@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../db';
+import { Role } from '../types';
 
 const router = Router();
 
@@ -26,6 +27,7 @@ router.post('/admin/signup', async (req, res) => {
   req.session.actorType = 'admin';
   req.session.workspaceId = workspace.id;
   req.session.actorId = admin.id;
+  req.session.role = admin.role as Role;
 
   res.status(201).json({
     workspace: { id: workspace.id, name: workspace.name, workspaceCode: workspace.workspaceCode, onboardingStep: workspace.onboardingStep },
@@ -55,6 +57,7 @@ router.post('/admin/login', async (req, res) => {
   req.session.actorType = 'admin';
   req.session.workspaceId = workspace.id;
   req.session.actorId = admin.id;
+  req.session.role = admin.role as Role;
 
   res.json({
     workspace: { id: workspace.id, name: workspace.name, workspaceCode: workspace.workspaceCode, onboardingStep: workspace.onboardingStep },
@@ -80,6 +83,7 @@ router.post('/employee/login', async (req, res) => {
   req.session.actorType = 'employee';
   req.session.workspaceId = workspace.id;
   req.session.actorId = match.id;
+  req.session.role = 'COACH'; // Employee has no role column of its own — PIN login implicitly maps to COACH
 
   res.json({
     employee: { id: match.id, name: match.name, role: match.role },
@@ -103,7 +107,7 @@ router.get('/me', async (req, res) => {
     const admin = await prisma.adminUser.findUnique({ where: { id: req.session.actorId } });
     return res.json({
       actorType: 'admin',
-      admin: admin ? { id: admin.id, email: admin.email } : null,
+      admin: admin ? { id: admin.id, email: admin.email, role: admin.role } : null,
       workspace: { id: workspace.id, name: workspace.name, workspaceCode: workspace.workspaceCode, onboardingStep: workspace.onboardingStep },
     });
   }

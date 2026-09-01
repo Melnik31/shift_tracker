@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
-import { CellValue, Employee, Shift, StatusValue, STATUS_VALUES, SubRow } from '../lib/types';
+import { CellValue, Employee, Shift, SESSION_TYPES, SubRow } from '../lib/types';
 import { toMinutes, fromMinutes } from '../lib/time';
+import CellFieldEditor, { CellFieldState, cellFieldStateFromValue, cellFieldPayload } from './CellFieldEditor';
 
 interface Props {
   shift: Shift;
@@ -14,19 +15,14 @@ interface Props {
   onDeleteShift: () => void;
 }
 
-const BADGE_COLORS = ['#ef4444', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#64748b'];
-
 export default function CellPopover({ shift, cellValue, subRow, employees, anchor, onClose, onSaved, onDeleteShift }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   const [startTime, setStartTime] = useState(shift.startTime);
   const [endTime, setEndTime] = useState(shift.endTime);
-  const [textValue, setTextValue] = useState(cellValue.textValue ?? '');
-  const [badgeLabel, setBadgeLabel] = useState(cellValue.badgeLabel ?? '');
-  const [badgeColor, setBadgeColor] = useState(cellValue.badgeColor ?? BADGE_COLORS[0]);
-  const [statusValue, setStatusValue] = useState<StatusValue | ''>(cellValue.statusValue ?? '');
-  const [linkUrl, setLinkUrl] = useState(cellValue.linkUrl ?? '');
-  const [staffIds, setStaffIds] = useState<string[]>(cellValue.staffAssignments.map((a) => a.employee.id));
+  const [sessionType, setSessionType] = useState(shift.sessionType ?? '');
+  const [cancelled, setCancelled] = useState(shift.cancelled ?? false);
+  const [field, setField] = useState<CellFieldState>(() => cellFieldStateFromValue(cellValue));
   const [uploading, setUploading] = useState(false);
 
   // Changing the start time bumps the end time to exactly one hour later —
@@ -38,23 +34,15 @@ export default function CellPopover({ shift, cellValue, subRow, employees, ancho
   }
 
   async function save() {
-    if (startTime !== shift.startTime || endTime !== shift.endTime) {
-      await api.patch(`/shifts/${shift.id}`, { startTime, endTime });
+    if (
+      startTime !== shift.startTime ||
+      endTime !== shift.endTime ||
+      sessionType !== (shift.sessionType ?? '') ||
+      cancelled !== (shift.cancelled ?? false)
+    ) {
+      await api.patch(`/shifts/${shift.id}`, { startTime, endTime, sessionType: sessionType || null, cancelled });
     }
-    const payload: Record<string, unknown> = {};
-    if (subRow.dataType === 'TEXT') payload.textValue = textValue;
-    if (subRow.dataType === 'BADGE') {
-      payload.badgeLabel = badgeLabel;
-      payload.badgeColor = badgeColor;
-    }
-    if (subRow.dataType === 'STATUS') payload.statusValue = statusValue || null;
-    if (subRow.dataType === 'LINK') {
-      payload.linkUrl = linkUrl;
-      payload.textValue = textValue; // reused as the link's display label (e.g. a drill name)
-    }
-    if (subRow.dataType === 'STAFF') payload.staffEmployeeIds = staffIds;
-
-    await api.patch(`/shifts/cells/${cellValue.id}`, payload);
+    await api.patch(`/shifts/cells/${cellValue.id}`, cellFieldPayload(subRow.dataType, field));
     onSaved();
   }
 
@@ -67,7 +55,7 @@ export default function CellPopover({ shift, cellValue, subRow, employees, ancho
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startTime, endTime, textValue, badgeLabel, badgeColor, statusValue, linkUrl, staffIds]);
+  }, [startTime, endTime, sessionType, cancelled, field]);
 
   function handleEnter(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -135,91 +123,29 @@ export default function CellPopover({ shift, cellValue, subRow, employees, ancho
         </div>
       </div>
 
-      {subRow.dataType === 'TEXT' && (
-        <textarea
-          autoFocus
-          value={textValue}
-          onChange={(e) => setTextValue(e.target.value)}
-          onKeyDown={handleEnter}
-          rows={3}
-          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-          placeholder="e.g. Setup notes, post instructions..."
-        />
-      )}
-
-      {subRow.dataType === 'BADGE' && (
-        <div>
-          <input
-            autoFocus
-            value={badgeLabel}
-            onChange={(e) => setBadgeLabel(e.target.value)}
-            onKeyDown={handleEnter}
-            className="w-full mb-2 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-            placeholder="e.g. High, Headliner"
-          />
-          <div className="flex gap-1.5">
-            {BADGE_COLORS.map((c) => (
-              <button
-                key={c}
-                onClick={() => setBadgeColor(c)}
-                style={{ backgroundColor: c }}
-                className={`w-6 h-6 rounded-full border-2 ${badgeColor === c ? 'border-slate-900' : 'border-transparent'}`}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {subRow.dataType === 'STATUS' && (
+      <div className="mb-3">
+        <label className="block text-xs text-slate-500 mb-1">Session type</label>
         <select
-          autoFocus
-          value={statusValue}
-          onChange={(e) => setStatusValue(e.target.value as StatusValue)}
-          onKeyDown={handleEnter}
-          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+          value={sessionType}
+          onChange={(e) => setSessionType(e.target.value)}
+          className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
         >
           <option value="">—</option>
-          {STATUS_VALUES.map((s) => (
-            <option key={s} value={s}>
-              {s.replace('_', ' ')}
+          {SESSION_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
             </option>
           ))}
         </select>
-      )}
+      </div>
 
-      {subRow.dataType === 'LINK' && (
-        <div className="space-y-2">
-          <input
-            autoFocus
-            value={textValue}
-            onChange={(e) => setTextValue(e.target.value)}
-            onKeyDown={handleEnter}
-            className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-            placeholder="Link label, e.g. Change of Angle"
-          />
-          <input
-            value={linkUrl}
-            onChange={(e) => setLinkUrl(e.target.value)}
-            onKeyDown={handleEnter}
-            className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-            placeholder="https://... or #drill/..."
-          />
-        </div>
-      )}
+      <label className="flex items-center gap-2 text-xs text-slate-600 mb-3">
+        <input type="checkbox" checked={cancelled} onChange={(e) => setCancelled(e.target.checked)} />
+        Cancelled — excludes this shift from payable hours
+      </label>
 
-      {subRow.dataType === 'STAFF' && (
-        <div className="max-h-36 overflow-y-auto space-y-1">
-          {employees.map((emp) => (
-            <label key={emp.id} className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={staffIds.includes(emp.id)}
-                onChange={(e) => setStaffIds(e.target.checked ? [...staffIds, emp.id] : staffIds.filter((id) => id !== emp.id))}
-              />
-              {emp.name}
-            </label>
-          ))}
-        </div>
+      {subRow.dataType !== 'FILE' && (
+        <CellFieldEditor dataType={subRow.dataType} state={field} onChange={setField} employees={employees} onKeyDown={handleEnter} autoFocus />
       )}
 
       {subRow.dataType === 'FILE' && (

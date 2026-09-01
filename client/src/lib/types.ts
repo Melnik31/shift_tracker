@@ -4,6 +4,17 @@ export type DataType = (typeof DATA_TYPES)[number];
 export const STATUS_VALUES = ['SCHEDULED', 'IN_PROGRESS', 'COMPLETED'] as const;
 export type StatusValue = (typeof STATUS_VALUES)[number];
 
+// Descriptive-only categorization of a Shift, mirrors server/src/types.ts.
+export const SESSION_TYPES = ['Ice Session', 'Skill Session', 'Workout', 'Association'] as const;
+export type SessionType = (typeof SESSION_TYPES)[number];
+
+// Payroll review, mirrors server/src/types.ts.
+export const PAYROLL_PERIOD_STATUSES = ['OPEN', 'REVIEWED', 'APPROVED'] as const;
+export type PayrollPeriodStatus = (typeof PAYROLL_PERIOD_STATUSES)[number];
+
+export const EXCEPTION_KINDS = ['MISSING_SESSION_TYPE', 'OVERLAPPING_SHIFTS', 'CANCELLED_SESSION', 'HIGH_HOURS', 'LOW_HOURS'] as const;
+export type ExceptionKind = (typeof EXCEPTION_KINDS)[number];
+
 export interface SubRow {
   id: string;
   locationId: string;
@@ -61,7 +72,33 @@ export interface Shift {
   date: string;
   startTime: string;
   endTime: string;
+  sessionType?: string | null;
+  cancelled?: boolean;
   cellValues: CellValue[];
+}
+
+export interface BulkShiftRow {
+  subRowId: string;
+  textValue?: string;
+  badgeLabel?: string;
+  badgeColor?: string;
+  statusValue?: string;
+  linkUrl?: string;
+  staffEmployeeIds?: string[];
+  hasFile?: boolean;
+}
+
+export interface BulkShiftRequest {
+  date: string;
+  startTime: string;
+  endTime: string;
+  sessionType?: string | null;
+  rows: BulkShiftRow[];
+}
+
+export interface BulkShiftResponse {
+  created: { subRowId: string; shiftId: string; cellValueId: string }[];
+  skipped: { subRowId: string; reason: string }[];
 }
 
 export interface GapDetail {
@@ -98,6 +135,7 @@ export interface EmployeeDayShift {
   date: string;
   startTime: string;
   endTime: string;
+  sessionType?: string | null;
   subRowLabel: string;
   locationName: string;
   sectionName: string;
@@ -153,4 +191,55 @@ export interface RangeOverview {
     reviewGapCount: number;
     employeesScheduled: number;
   };
+}
+
+export interface PayrollPeriod {
+  id: string;
+  workspaceId: string;
+  start: string;
+  end: string;
+  status: PayrollPeriodStatus;
+  createdAt: string;
+  reviewedAt: string | null;
+  approvedAt: string | null;
+}
+
+export interface PayrollException {
+  kind: ExceptionKind;
+  date: string;
+  shiftId?: string;
+  detail: string;
+}
+
+export interface PayrollEmployeeSummary {
+  employeeId: string;
+  employeeName: string;
+  payableHours: number;
+  adjustmentHours: number;
+  totalPayableHours: number;
+  exceptions: PayrollException[];
+}
+
+export interface PayrollPeriodDetail {
+  period: PayrollPeriod;
+  employees: PayrollEmployeeSummary[];
+}
+
+export interface PayrollAdjustment {
+  id: string;
+  periodId: string;
+  employeeId: string;
+  deltaMinutes: number;
+  reason: string;
+  createdAt: string;
+  employee: { id: string; name: string };
+  createdByAdmin: { id: string; email: string };
+}
+
+export interface PayrollPeriodReopen {
+  id: string;
+  periodId: string;
+  reason: string;
+  createdAt: string;
+  createdByAdmin: { id: string; email: string };
 }

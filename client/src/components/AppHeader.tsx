@@ -50,6 +50,11 @@ export default function AppHeader({
           <NavLink to="/dashboard" className={tabClass}>
             Dashboard
           </NavLink>
+          {me?.admin?.role === 'ADMIN' && (
+            <NavLink to="/payroll" className={tabClass}>
+              Payroll
+            </NavLink>
+          )}
         </nav>
       </div>
 

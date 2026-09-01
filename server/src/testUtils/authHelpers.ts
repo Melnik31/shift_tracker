@@ -33,3 +33,19 @@ export async function loginEmployee(app: Express, workspaceCode: string, pin: st
   if (res.status !== 200) throw new Error(`loginEmployee failed: ${res.status} ${JSON.stringify(res.body)}`);
   return { agent, employee: res.body.employee as { id: string; name: string; role: string } };
 }
+
+// Bypasses signup (which always defaults to ADMIN) to create a second
+// AdminUser in an existing workspace with an arbitrary role, then logs them
+// in via the real endpoint so their session is set up exactly like any other
+// admin's — used to test requireRole gating for DIRECTOR/CEO/COACH etc.
+export async function seedAdminWithRole(app: Express, workspaceId: string, email: string, role: string, password = 'elevated-pw') {
+  const bcrypt = await import('bcryptjs');
+  const { prisma } = await import('../db');
+  const workspace = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
+  await prisma.adminUser.create({ data: { workspaceId, email, passwordHash: bcrypt.hashSync(password, 10), role } });
+
+  const agent = request.agent(app);
+  const res = await agent.post('/api/auth/admin/login').send({ workspaceCode: workspace.workspaceCode, email, password });
+  if (res.status !== 200) throw new Error(`seedAdminWithRole login failed: ${res.status} ${JSON.stringify(res.body)}`);
+  return agent;
+}
