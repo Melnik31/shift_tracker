@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../db';
 import { Role } from '../types';
+import { requireAdmin } from '../middleware/auth';
 
 const router = Router();
 
@@ -72,6 +73,9 @@ router.post('/admin/login', async (req, res) => {
 
   res.json({
     workspace: { id: workspace.id, name: workspace.name, workspaceCode: workspace.workspaceCode, onboardingStep: workspace.onboardingStep },
+    // Lets the client navigate straight to the forced password-change
+    // screen right after login, same pattern onboardingStep already uses.
+    mustChangePassword: admin.mustChangePassword,
   });
 });
 
@@ -106,6 +110,23 @@ router.post('/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
 });
 
+// POST /api/auth/admin/change-password { newPassword } — updates the
+// caller's own password and clears mustChangePassword. Not restricted to
+// only the forced-reset flow: this is also the only way an admin can
+// change their own password at all today, so it's deliberately general-purpose.
+router.post('/admin/change-password', requireAdmin, async (req, res) => {
+  const { newPassword } = req.body ?? {};
+  if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
+    return res.status(400).json({ error: 'newPassword must be at least 8 characters' });
+  }
+
+  await prisma.adminUser.update({
+    where: { id: req.session.actorId! },
+    data: { passwordHash: bcrypt.hashSync(newPassword, 10), mustChangePassword: false },
+  });
+  res.json({ ok: true });
+});
+
 router.get('/me', async (req, res) => {
   if (!req.session.actorType || !req.session.workspaceId) {
     return res.status(401).json({ error: 'Not authenticated' });
@@ -127,6 +148,9 @@ router.get('/me', async (req, res) => {
             // Lets a restricted Director/SLI render their fixed campus label
             // straight from /me — no separate campus-list request needed.
             campus: admin.campus ? { id: admin.campus.id, name: admin.campus.name } : null,
+            // So a page refresh mid-flow still redirects to the forced
+            // password-change screen (see App.tsx's RequireAdmin).
+            mustChangePassword: admin.mustChangePassword,
           }
         : null,
       workspace: { id: workspace.id, name: workspace.name, workspaceCode: workspace.workspaceCode, onboardingStep: workspace.onboardingStep },

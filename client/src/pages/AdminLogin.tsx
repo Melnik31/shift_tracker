@@ -17,13 +17,14 @@ export default function AdminLogin() {
     setError(null);
     setLoading(true);
     try {
-      const res = await api.post<{ workspace: { onboardingStep: number } }>('/auth/admin/login', {
+      const res = await api.post<{ workspace: { onboardingStep: number }; mustChangePassword: boolean }>('/auth/admin/login', {
         workspaceCode,
         email,
         password,
       });
       await refresh();
-      navigate(res.workspace.onboardingStep < 3 ? '/onboarding' : '/matrix');
+      if (res.mustChangePassword) navigate('/admin/set-password');
+      else navigate(res.workspace.onboardingStep < 3 ? '/onboarding' : '/matrix');
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Login failed');
     } finally {

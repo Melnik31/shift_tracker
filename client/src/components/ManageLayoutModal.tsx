@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useLayout, useLayoutMutations } from '../hooks/useLayout';
 import { useCampuses } from '../hooks/useCampuses';
-import { DATA_TYPES, DataType } from '../lib/types';
+import { DATA_TYPES, DataType, Location } from '../lib/types';
+import { DATA_TYPE_INFO } from '../lib/constants';
 import Modal from './Modal';
 
 // campusId mirrors whatever the Matrix's Campus selector is currently set
@@ -16,6 +17,34 @@ export default function ManageLayoutModal({ onClose, campusId }: { onClose: () =
   const [newSectionName, setNewSectionName] = useState('');
   const [newSectionCampusId, setNewSectionCampusId] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  // Empty by default — every existing location loads collapsed. A newly
+  // created or duplicated location's id is added here (see
+  // handleLocationCreated) so it opens expanded, since the admin most
+  // likely wants to review/adjust it right away. Nothing persists this
+  // across opens: the modal unmounts entirely on close (see MatrixView's
+  // `{showManageLayout && <ManageLayoutModal .../>}`), so state resets to
+  // this default every time it's reopened — there's no existing pattern
+  // elsewhere in this app for remembering UI state across a remount.
+  const [expandedLocationIds, setExpandedLocationIds] = useState<Set<string>>(new Set());
+
+  function handleLocationCreated(id: string) {
+    setExpandedLocationIds((prev) => new Set(prev).add(id));
+  }
+  function toggleLocationExpanded(id: string) {
+    setExpandedLocationIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const allLocationIds = (data?.sections ?? []).flatMap((s) => s.locations.map((l) => l.id));
+  const allExpanded = allLocationIds.length > 0 && allLocationIds.every((id) => expandedLocationIds.has(id));
+  function toggleExpandAll() {
+    setExpandedLocationIds(allExpanded ? new Set() : new Set(allLocationIds));
+  }
 
   const allCampuses = campusData?.campuses ?? [];
   const activeCampuses = allCampuses.filter((c) => c.active);
@@ -38,6 +67,13 @@ export default function ManageLayoutModal({ onClose, campusId }: { onClose: () =
 
   return (
     <Modal title={scopedCampusName ? `Manage Layout — ${scopedCampusName}` : 'Manage Layout'} onClose={onClose}>
+      {allLocationIds.length > 0 && (
+        <div className="flex justify-end mb-2">
+          <button onClick={toggleExpandAll} className="text-xs text-slate-500 hover:underline">
+            {allExpanded ? 'Collapse All' : 'Expand All'}
+          </button>
+        </div>
+      )}
       <div className="space-y-4 mb-6">
         {(data?.sections ?? []).map((section, sIdx, sArr) => (
           <div key={section.id} className="border border-slate-200 rounded-lg p-3">
@@ -79,53 +115,19 @@ export default function ManageLayoutModal({ onClose, campusId }: { onClose: () =
 
             <div className="pl-3 space-y-3">
               {section.locations.map((location, lIdx, lArr) => (
-                <div key={location.id} className="border-l-2 border-slate-100 pl-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <EditableName
-                      value={location.name}
-                      onSave={(name) => mutations.updateLocation.mutate({ id: location.id, name })}
-                      className="text-sm font-medium text-slate-700"
-                    />
-                    <div className="flex items-center gap-1">
-                      <ReorderButtons
-                        disabledUp={lIdx === 0}
-                        disabledDown={lIdx === lArr.length - 1}
-                        onUp={() => mutations.moveLocation.mutate({ id: location.id, direction: 'up' })}
-                        onDown={() => mutations.moveLocation.mutate({ id: location.id, direction: 'down' })}
-                      />
-                      <button onClick={() => mutations.deleteLocation.mutate(location.id)} className="text-xs text-red-500 hover:underline ml-2">
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-
-                  <ul className="space-y-1 mb-2">
-                    {location.subRows.map((sr, srIdx, srArr) => (
-                      <li key={sr.id} className="flex items-center justify-between text-sm text-slate-600">
-                        <div className="flex items-center gap-2">
-                          <EditableName value={sr.label} onSave={(label) => mutations.updateSubRow.mutate({ id: sr.id, label })} />
-                          <span className="text-xs text-slate-400">({sr.dataType})</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <ReorderButtons
-                            disabledUp={srIdx === 0}
-                            disabledDown={srIdx === srArr.length - 1}
-                            onUp={() => mutations.moveSubRow.mutate({ id: sr.id, direction: 'up' })}
-                            onDown={() => mutations.moveSubRow.mutate({ id: sr.id, direction: 'down' })}
-                          />
-                          <button onClick={() => mutations.deleteSubRow.mutate(sr.id)} className="text-xs text-red-500 hover:underline ml-2">
-                            ✕
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-
-                  <AddSubRowForm locationId={location.id} />
-                </div>
+                <LocationCard
+                  key={location.id}
+                  location={location}
+                  lIdx={lIdx}
+                  lArr={section.locations}
+                  mutations={mutations}
+                  expanded={expandedLocationIds.has(location.id)}
+                  onToggleExpand={() => toggleLocationExpanded(location.id)}
+                  onLocationCreated={handleLocationCreated}
+                />
               ))}
 
-              <AddLocationForm sectionId={section.id} />
+              <AddLocationForm sectionId={section.id} onLocationCreated={handleLocationCreated} />
             </div>
           </div>
         ))}
@@ -198,7 +200,140 @@ function EditableName({ value, onSave, className }: { value: string; onSave: (v:
   );
 }
 
-function AddLocationForm({ sectionId }: { sectionId: string }) {
+// A collapsed row still shows every control (reorder/Duplicate/Remove) —
+// only the sub-row list and "add sub-row" form are hidden — so nothing an
+// admin might need is ever behind an extra click to discover.
+function LocationCard({
+  location,
+  lIdx,
+  lArr,
+  mutations,
+  expanded,
+  onToggleExpand,
+  onLocationCreated,
+}: {
+  location: Location;
+  lIdx: number;
+  lArr: Location[];
+  mutations: ReturnType<typeof useLayoutMutations>;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  onLocationCreated: (id: string) => void;
+}) {
+  const [duplicating, setDuplicating] = useState(false);
+  const [duplicateName, setDuplicateName] = useState('');
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
+
+  async function onDuplicate() {
+    if (!duplicateName.trim()) return;
+    setDuplicateError(null);
+    try {
+      const created = await mutations.duplicateLocation.mutateAsync({ id: location.id, newName: duplicateName.trim() });
+      onLocationCreated(created.id);
+      setDuplicating(false);
+      setDuplicateName('');
+    } catch (err: any) {
+      setDuplicateError(err.message ?? 'Could not duplicate location');
+    }
+  }
+
+  return (
+    <div className="border-l-2 border-slate-100 pl-3">
+      <div className="flex items-center justify-between mb-1 gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <button
+            onClick={onToggleExpand}
+            title={expanded ? 'Collapse' : 'Expand'}
+            className="text-slate-400 hover:text-slate-700 text-xs w-3 flex-shrink-0"
+          >
+            {expanded ? '▾' : '▸'}
+          </button>
+          <EditableName
+            value={location.name}
+            onSave={(name) => mutations.updateLocation.mutate({ id: location.id, name })}
+            className="text-sm font-medium text-slate-700"
+          />
+          {!expanded && (
+            <span className="text-xs text-slate-400 flex-shrink-0">
+              — {location.subRows.length} field{location.subRows.length === 1 ? '' : 's'}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <ReorderButtons
+            disabledUp={lIdx === 0}
+            disabledDown={lIdx === lArr.length - 1}
+            onUp={() => mutations.moveLocation.mutate({ id: location.id, direction: 'up' })}
+            onDown={() => mutations.moveLocation.mutate({ id: location.id, direction: 'down' })}
+          />
+          <button onClick={() => setDuplicating((v) => !v)} className="text-xs text-slate-500 hover:underline ml-2">
+            Duplicate
+          </button>
+          <button onClick={() => mutations.deleteLocation.mutate(location.id)} className="text-xs text-red-500 hover:underline ml-2">
+            Remove
+          </button>
+        </div>
+      </div>
+
+      {duplicating && (
+        <div className="flex gap-2 mb-2">
+          <input
+            autoFocus
+            className="flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm"
+            placeholder="New location name"
+            value={duplicateName}
+            onChange={(e) => setDuplicateName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && onDuplicate()}
+          />
+          <button onClick={onDuplicate} className="rounded-md bg-slate-900 text-white px-3 py-1 text-sm font-medium hover:bg-slate-700 flex-shrink-0">
+            Create
+          </button>
+          <button
+            onClick={() => {
+              setDuplicating(false);
+              setDuplicateName('');
+              setDuplicateError(null);
+            }}
+            className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 flex-shrink-0"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {duplicateError && <p className="text-xs text-red-600 mb-2">{duplicateError}</p>}
+
+      {expanded && (
+        <>
+          <ul className="space-y-1 mb-2">
+            {location.subRows.map((sr, srIdx, srArr) => (
+              <li key={sr.id} className="flex items-center justify-between text-sm text-slate-600">
+                <div className="flex items-center gap-2">
+                  <EditableName value={sr.label} onSave={(label) => mutations.updateSubRow.mutate({ id: sr.id, label })} />
+                  <span className="text-xs text-slate-400">({DATA_TYPE_INFO[sr.dataType].label})</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <ReorderButtons
+                    disabledUp={srIdx === 0}
+                    disabledDown={srIdx === srArr.length - 1}
+                    onUp={() => mutations.moveSubRow.mutate({ id: sr.id, direction: 'up' })}
+                    onDown={() => mutations.moveSubRow.mutate({ id: sr.id, direction: 'down' })}
+                  />
+                  <button onClick={() => mutations.deleteSubRow.mutate(sr.id)} className="text-xs text-red-500 hover:underline ml-2">
+                    ✕
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <AddSubRowForm locationId={location.id} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function AddLocationForm({ sectionId, onLocationCreated }: { sectionId: string; onLocationCreated: (id: string) => void }) {
   const { addLocation } = useLayoutMutations();
   const [name, setName] = useState('');
   return (
@@ -210,9 +345,10 @@ function AddLocationForm({ sectionId }: { sectionId: string }) {
         onChange={(e) => setName(e.target.value)}
       />
       <button
-        onClick={() => {
+        onClick={async () => {
           if (!name.trim()) return;
-          addLocation.mutate({ sectionId, name: name.trim() });
+          const created = await addLocation.mutateAsync({ sectionId, name: name.trim() });
+          onLocationCreated(created.id);
           setName('');
         }}
         className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50"
@@ -238,7 +374,7 @@ function AddSubRowForm({ locationId }: { locationId: string }) {
       <select className="rounded-md border border-slate-300 px-1 py-1 text-sm" value={dataType} onChange={(e) => setDataType(e.target.value as DataType)}>
         {DATA_TYPES.map((t) => (
           <option key={t} value={t}>
-            {t}
+            {DATA_TYPE_INFO[t].label}
           </option>
         ))}
       </select>

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createApp } from '../app';
 import { resetDb } from '../testUtils/resetDb';
-import { signupAdmin, loginEmployee, seedAdminWithRole } from '../testUtils/authHelpers';
+import { signupAdmin, loginEmployee, seedAdminWithRole, getDefaultCampus } from '../testUtils/authHelpers';
 
 const app = createApp();
 
@@ -93,7 +93,11 @@ describe('employees role gating (requireRole DIRECTOR/ADMIN/CEO)', () => {
 
   it('DIRECTOR, ADMIN, and CEO all succeed identically', async () => {
     const { agent: adminAgent, workspace } = await signupAdmin(app, { workspaceCode: 'EROLE2' });
-    const directorAgent = await seedAdminWithRole(app, workspace.id, 'director@erole2.example', 'DIRECTOR');
+    const campus = await getDefaultCampus(workspace.id);
+    // DIRECTOR is restricted and fails closed with no campus assigned (see
+    // campusIsolation.test.ts) — give it one here since this test is only
+    // about the three roles succeeding identically, not campus scoping.
+    const directorAgent = await seedAdminWithRole(app, workspace.id, 'director@erole2.example', 'DIRECTOR', { campusId: campus.id });
     const ceoAgent = await seedAdminWithRole(app, workspace.id, 'ceo@erole2.example', 'CEO');
 
     for (const [label, agent] of [

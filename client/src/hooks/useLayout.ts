@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { Section, DataType } from '../lib/types';
+import { Section, DataType, Location } from '../lib/types';
 
 // campusId narrows the view to one Campus (the Campus selector) — has no
 // effect for a restricted Director/SLI, whose own session scope always wins
@@ -39,7 +39,8 @@ export function useLayoutMutations() {
   });
 
   const addLocation = useMutation({
-    mutationFn: (vars: { sectionId: string; name: string }) => api.post('/layout/locations', vars),
+    // Server returns the bare Location (no subRows include, unlike duplicate below).
+    mutationFn: (vars: { sectionId: string; name: string }) => api.post<Pick<Location, 'id'>>('/layout/locations', vars),
     onSuccess: invalidate,
   });
 
@@ -55,6 +56,14 @@ export function useLayoutMutations() {
 
   const moveLocation = useMutation({
     mutationFn: (vars: { id: string; direction: 'up' | 'down' }) => api.post(`/layout/locations/${vars.id}/move`, { direction: vars.direction }),
+    onSuccess: invalidate,
+  });
+
+  // Copies a Location's SubRow structure (not its Shift/CellValue data) onto
+  // a brand-new Location — lets an admin build one location from another
+  // instead of re-entering every sub-row by hand. See ManageLayoutModal.
+  const duplicateLocation = useMutation({
+    mutationFn: (vars: { id: string; newName: string }) => api.post<Location>(`/layout/locations/${vars.id}/duplicate`, { newName: vars.newName }),
     onSuccess: invalidate,
   });
 
@@ -87,6 +96,7 @@ export function useLayoutMutations() {
     updateLocation,
     deleteLocation,
     moveLocation,
+    duplicateLocation,
     addSubRow,
     updateSubRow,
     deleteSubRow,

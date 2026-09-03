@@ -60,9 +60,11 @@ export interface Campus {
 
 export interface AdminUserAccount {
   id: string;
+  name: string | null;
   email: string;
   role: AssignableAdminRole;
   active: boolean;
+  mustChangePassword: boolean;
   campus: { id: string; name: string } | null;
   createdAt: string;
 }
@@ -71,6 +73,8 @@ export interface Employee {
   id: string;
   name: string;
   role: string;
+  campusId: string | null;
+  campus: { id: string; name: string } | null;
 }
 
 export interface FileUpload {

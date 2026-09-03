@@ -26,6 +26,7 @@ model Workspace {
   payrollPeriods    PayrollPeriod[]
   payrollAdjustments PayrollAdjustment[]
   payrollPeriodReopens PayrollPeriodReopen[]
+  roleChanges RoleChange[]
 }
 
 // A Workspace subdivision that scopes DIRECTOR/SENIOR_LEAD_INSTRUCTOR access (ADMIN/CEO see
@@ -51,6 +52,7 @@ model Campus {
   workspace  Workspace   @relation(fields: [workspaceId], references: [id])
   sections   Section[]
   adminUsers AdminUser[]
+  employees  Employee[]
 
   @@index([workspaceId])
 }
@@ -62,6 +64,7 @@ model Campus {
 model AdminUser {
   id           String   @id @default(uuid())
   workspaceId  String
+  name         String?  // optional; existing accounts predate this field
   email        String
   passwordHash String
   role         String   @default("ADMIN")
@@ -72,15 +75,45 @@ model AdminUser {
   // rather than a hard DELETE, since PayrollAdjustment/PayrollPeriodReopen
   // hold non-nullable createdBy FKs to this table (see routes/admins.ts).
   active       Boolean  @default(true)
+  // True only for accounts created via POST /api/admin-users (a temp
+  // password) — the founding admin from /admin/signup and test-elevated
+  // admins are unaffected by the schema default. Login/​/me surface this so
+  // the client forces a change before anything else loads (see routes/auth.ts).
+  mustChangePassword Boolean @default(false)
   createdAt    DateTime @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id])
   campus    Campus?   @relation(fields: [campusId], references: [id])
   createdAdjustments PayrollAdjustment[]
   createdReopens PayrollPeriodReopen[]
+  roleChangesReceived RoleChange[] @relation("RoleChangeTarget")
+  roleChangesMade     RoleChange[] @relation("RoleChangeActor")
 
   @@unique([workspaceId, email])
   @@index([campusId])
+}
+
+// Audit trail for every role assignment on an AdminUser — one row at
+// creation (oldRole: null, reason fixed to "Account created") and one per
+// promotion/demotion after (see routes/admins.ts POST / and PATCH /:id/role).
+// Same shape as PayrollPeriodReopen (actor, reason, timestamp) for the same
+// reason: a security-relevant action that must never be silently reversible.
+model RoleChange {
+  id           String   @id @default(uuid())
+  workspaceId  String
+  targetUserId String
+  actorId      String
+  oldRole      String?
+  newRole      String
+  reason       String
+  createdAt    DateTime @default(now())
+
+  workspace  Workspace @relation(fields: [workspaceId], references: [id])
+  targetUser AdminUser @relation("RoleChangeTarget", fields: [targetUserId], references: [id])
+  actor      AdminUser @relation("RoleChangeActor", fields: [actorId], references: [id])
+
+  @@index([workspaceId])
+  @@index([targetUserId])
 }
 
 model Employee {
@@ -89,13 +122,20 @@ model Employee {
   name        String
   pinHash     String
   role        String   @default("Employee")
+  // Null = floats across every Campus in the workspace (visible/assignable
+  // everywhere), same semantics as AdminUser.campusId. Set = "home" Campus;
+  // a restricted DIRECTOR/SENIOR_LEAD_INSTRUCTOR creating an Employee always
+  // gets their own Campus here — see routes/employees.ts.
+  campusId    String?
   createdAt   DateTime @default(now())
 
   workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  campus      Campus?   @relation(fields: [campusId], references: [id])
   assignments CellStaffAssignment[]
   payrollAdjustments PayrollAdjustment[]
 
   @@index([workspaceId])
+  @@index([campusId])
 }
 
 // ── Layout engine: Section -> Location -> SubRow ────────────────────────

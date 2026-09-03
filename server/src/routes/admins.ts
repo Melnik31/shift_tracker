@@ -17,8 +17,26 @@ function isCampusScopedRole(role: AssignableAdminRole): boolean {
   return (CAMPUS_SCOPED_ROLES as readonly string[]).includes(role);
 }
 
-function adminSummary(admin: { id: string; email: string; role: string; active: boolean; createdAt: Date; campus: { id: string; name: string } | null }) {
-  return { id: admin.id, email: admin.email, role: admin.role, active: admin.active, campus: admin.campus, createdAt: admin.createdAt };
+function adminSummary(admin: {
+  id: string;
+  name: string | null;
+  email: string;
+  role: string;
+  active: boolean;
+  mustChangePassword: boolean;
+  createdAt: Date;
+  campus: { id: string; name: string } | null;
+}) {
+  return {
+    id: admin.id,
+    name: admin.name,
+    email: admin.email,
+    role: admin.role,
+    active: admin.active,
+    mustChangePassword: admin.mustChangePassword,
+    campus: admin.campus,
+    createdAt: admin.createdAt,
+  };
 }
 
 // GET /api/admin-users — every AdminUser in the workspace, self included
@@ -58,10 +76,14 @@ async function resolveCampusForRole(
   return { ok: true, campusId: campus.id };
 }
 
-// POST /api/admin-users { email, password, role, campusId? }
+// POST /api/admin-users { name?, email, password, role, campusId? } —
+// always creates with mustChangePassword: true (a temp password the new
+// admin must replace on first login, see routes/auth.ts) and logs a
+// RoleChange row (oldRole: null) so account creation shows up in the same
+// audit trail as every later promotion/demotion.
 router.post('/', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
-  const { email, password, role, campusId: bodyCampusId } = req.body ?? {};
+  const { name, email, password, role, campusId: bodyCampusId } = req.body ?? {};
   if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
   if (!isAssignableRole(role)) return res.status(400).json({ error: `role must be one of ${ASSIGNABLE_ADMIN_ROLES.join(', ')}` });
 
@@ -72,31 +94,41 @@ router.post('/', async (req, res) => {
   if (!resolved.ok) return res.status(resolved.status).json({ error: resolved.error });
 
   const admin = await prisma.adminUser.create({
-    data: { workspaceId, email, passwordHash: bcrypt.hashSync(password, 10), role, campusId: resolved.campusId },
+    data: {
+      workspaceId,
+      name: name || null,
+      email,
+      passwordHash: bcrypt.hashSync(password, 10),
+      role,
+      campusId: resolved.campusId,
+      mustChangePassword: true,
+    },
     include: { campus: { select: { id: true, name: true } } },
+  });
+  await prisma.roleChange.create({
+    data: { workspaceId, targetUserId: admin.id, actorId: req.session.actorId!, oldRole: null, newRole: role, reason: 'Account created' },
   });
   res.status(201).json(adminSummary(admin));
 });
 
-// PATCH /api/admin-users/:id { email?, password?, role?, campusId? } — role
-// and campusId are cross-validated together using the *effective* role (the
-// new one if provided, else the existing one), exactly like POST: changing
-// into a campus-scoped role requires a campusId in the same request;
-// changing out of one clears campusId regardless of what's sent.
-//
-// Cross-validation (including the "campus must be active" check) only runs
-// when the request actually touches role or campusId — an email/password-
-// only edit leaves the existing campusId untouched and unvalidated, so it
-// can't be broken by an unrelated later event like that campus being
-// deactivated after the assignment was made.
+// PATCH /api/admin-users/:id { email?, password?, campusId? } — role is
+// deliberately NOT accepted here anymore: every role change must go
+// through PATCH /:id/role below, which requires a reason and writes a
+// RoleChange audit row. A plain campusId (no role change — e.g. moving a
+// Director to a different campus) still works here, cross-validated
+// against the admin's *existing* role via resolveCampusForRole, same as
+// before. Cross-validation only runs when the request actually touches
+// campusId — an email/password-only edit leaves it untouched and
+// unvalidated, so it can't be broken by an unrelated later event like that
+// campus being deactivated after the assignment was made.
 router.patch('/:id', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
   const existing = await prisma.adminUser.findFirst({ where: { id: req.params.id, workspaceId } });
   if (!existing) return res.status(404).json({ error: 'Admin not found' });
 
   const { email, password, role, campusId: bodyCampusId } = req.body ?? {};
-  if (role !== undefined && !isAssignableRole(role)) {
-    return res.status(400).json({ error: `role must be one of ${ASSIGNABLE_ADMIN_ROLES.join(', ')}` });
+  if (role !== undefined) {
+    return res.status(400).json({ error: 'Use PATCH /api/admin-users/:id/role to change role (requires a reason and is audited)' });
   }
   if (email !== undefined && email !== existing.email) {
     const clash = await prisma.adminUser.findUnique({ where: { workspaceId_email: { workspaceId, email } } });
@@ -104,9 +136,8 @@ router.patch('/:id', async (req, res) => {
   }
 
   let campusId = existing.campusId;
-  if (role !== undefined || bodyCampusId !== undefined) {
-    const effectiveRole = (role ?? existing.role) as AssignableAdminRole;
-    const resolved = await resolveCampusForRole(workspaceId, effectiveRole, bodyCampusId !== undefined ? bodyCampusId : existing.campusId);
+  if (bodyCampusId !== undefined) {
+    const resolved = await resolveCampusForRole(workspaceId, existing.role as AssignableAdminRole, bodyCampusId);
     if (!resolved.ok) return res.status(resolved.status).json({ error: resolved.error });
     campusId = resolved.campusId;
   }
@@ -116,7 +147,6 @@ router.patch('/:id', async (req, res) => {
     data: {
       ...(email !== undefined ? { email } : {}),
       ...(password ? { passwordHash: bcrypt.hashSync(password, 10) } : {}),
-      ...(role !== undefined ? { role } : {}),
       campusId,
     },
     include: { campus: { select: { id: true, name: true } } },
@@ -129,6 +159,54 @@ async function activeAdminCount(workspaceId: string, excludeId?: string): Promis
     where: { workspaceId, active: true, role: { in: ['ADMIN', 'CEO'] }, ...(excludeId ? { id: { not: excludeId } } : {}) },
   });
 }
+
+// PATCH /api/admin-users/:id/role { newRole, reason } — the only way to
+// change an AdminUser's role. Requires a reason (matches
+// PayrollPeriodReopen's reason-required convention), blocks changing your
+// own role (avoid accidental self-lockout), blocks demoting the workspace's
+// last remaining active ADMIN/CEO to a non-unrestricted role (same
+// protection /:id/deactivate already has, for the same reason), reuses
+// resolveCampusForRole for the same campus cross-validation POST/PATCH use,
+// and writes a RoleChange audit row on success.
+router.patch('/:id/role', async (req, res) => {
+  const workspaceId = req.session.workspaceId!;
+  const existing = await prisma.adminUser.findFirst({ where: { id: req.params.id, workspaceId } });
+  if (!existing) return res.status(404).json({ error: 'Admin not found' });
+
+  const { newRole, campusId: bodyCampusId, reason } = req.body ?? {};
+  if (!isAssignableRole(newRole)) return res.status(400).json({ error: `newRole must be one of ${ASSIGNABLE_ADMIN_ROLES.join(', ')}` });
+  if (!reason || typeof reason !== 'string' || !reason.trim()) return res.status(400).json({ error: 'reason is required' });
+
+  if (existing.id === req.session.actorId) {
+    return res.status(409).json({ error: 'You cannot change your own role' });
+  }
+  if (['ADMIN', 'CEO'].includes(existing.role) && !['ADMIN', 'CEO'].includes(newRole) && existing.active) {
+    const remaining = await activeAdminCount(workspaceId, existing.id);
+    if (remaining === 0) {
+      return res.status(409).json({ error: 'Cannot demote the last remaining active Admin/CEO in this workspace' });
+    }
+  }
+
+  const resolved = await resolveCampusForRole(workspaceId, newRole, bodyCampusId !== undefined ? bodyCampusId : existing.campusId);
+  if (!resolved.ok) return res.status(resolved.status).json({ error: resolved.error });
+
+  const admin = await prisma.adminUser.update({
+    where: { id: existing.id },
+    data: { role: newRole, campusId: resolved.campusId },
+    include: { campus: { select: { id: true, name: true } } },
+  });
+  await prisma.roleChange.create({
+    data: {
+      workspaceId,
+      targetUserId: existing.id,
+      actorId: req.session.actorId!,
+      oldRole: existing.role,
+      newRole,
+      reason: reason.trim(),
+    },
+  });
+  res.json(adminSummary(admin));
+});
 
 // POST /api/admin-users/:id/deactivate — blocks self-deactivation and
 // blocks deactivating the workspace's last remaining active ADMIN/CEO

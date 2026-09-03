@@ -8,7 +8,7 @@ import { requireRole } from '../middleware/auth';
 import { STATUS_VALUES, SESSION_TYPES } from '../types';
 import { rejectIfLocked } from '../lib/payrollLock';
 import { campusScopeFor, NO_CAMPUS_ASSIGNED } from '../lib/campusScope';
-import { subRowInScope, shiftInScope, cellValueInScope, fileUploadInScope } from '../lib/ownership';
+import { subRowInScope, shiftInScope, cellValueInScope, fileUploadInScope, campusIdForSubRow } from '../lib/ownership';
 
 const router = Router();
 // Campus scoping is enforced per-handler below via campusScopeFor/the
@@ -161,8 +161,9 @@ router.post('/bulk', async (req, res) => {
     });
 
     if (subRow.dataType === 'STAFF' && Array.isArray(row.staffEmployeeIds)) {
+      const targetCampusId = await campusIdForSubRow(subRowId);
       const validEmployees = await prisma.employee.findMany({
-        where: { id: { in: row.staffEmployeeIds }, workspaceId },
+        where: { id: { in: row.staffEmployeeIds }, workspaceId, OR: [{ campusId: targetCampusId }, { campusId: null }] },
         select: { id: true },
       });
       const validIds = new Set(validEmployees.map((e) => e.id));
@@ -247,8 +248,9 @@ router.patch('/cells/:id', async (req, res) => {
   });
 
   if (Array.isArray(staffEmployeeIds)) {
+    const targetCampusId = await campusIdForSubRow(existing.subRowId);
     const validEmployees = await prisma.employee.findMany({
-      where: { id: { in: staffEmployeeIds }, workspaceId },
+      where: { id: { in: staffEmployeeIds }, workspaceId, OR: [{ campusId: targetCampusId }, { campusId: null }] },
       select: { id: true },
     });
     const validIds = new Set(validEmployees.map((e) => e.id));

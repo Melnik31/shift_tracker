@@ -11,6 +11,10 @@ export interface MeResponse {
     // Lets a restricted Director/SLI render their fixed campus label
     // straight from /me — see components/CampusSelector.tsx.
     campus: { id: string; name: string } | null;
+    // Forces the client to /admin/set-password before anything else loads
+    // (see App.tsx's RequireAdmin) — true only right after an ADMIN/CEO
+    // creates this account with a temp password.
+    mustChangePassword: boolean;
   } | null;
   employee?: { id: string; name: string; role: string } | null;
   workspace: { id: string; name: string; workspaceCode?: string; onboardingStep?: number };

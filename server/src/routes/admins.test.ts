@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createApp } from '../app';
+import { prisma } from '../db';
 import { resetDb } from '../testUtils/resetDb';
 import { signupAdmin, loginEmployee, seedAdminWithRole, getDefaultCampus, createCampus } from '../testUtils/authHelpers';
 
@@ -59,10 +60,27 @@ describe('POST /api/admin-users', () => {
 
     const res = await agent
       .post('/api/admin-users')
-      .send({ email: 'dir@ad4.example', password: 'pw123456', role: 'DIRECTOR', campusId: defaultCampus.id });
+      .send({ name: 'Jamie Rivera', email: 'dir@ad4.example', password: 'pw123456', role: 'DIRECTOR', campusId: defaultCampus.id });
     expect(res.status).toBe(201);
+    expect(res.body.name).toBe('Jamie Rivera');
     expect(res.body.role).toBe('DIRECTOR');
     expect(res.body.campus.id).toBe(defaultCampus.id);
+    expect(res.body.mustChangePassword).toBe(true);
+  });
+
+  it('logs a RoleChange row (oldRole: null) on creation', async () => {
+    const { agent } = await signupAdmin(app, { workspaceCode: 'AD4B' });
+    const rootAdmin = (await agent.get('/api/admin-users')).body.admins[0];
+
+    const created = await agent.post('/api/admin-users').send({ email: 'dir@ad4b.example', password: 'pw123456', role: 'ADMIN' });
+    expect(created.status).toBe(201);
+
+    const changes = await prisma.roleChange.findMany({ where: { targetUserId: created.body.id } });
+    expect(changes).toHaveLength(1);
+    expect(changes[0].oldRole).toBeNull();
+    expect(changes[0].newRole).toBe('ADMIN');
+    expect(changes[0].actorId).toBe(rootAdmin.id);
+    expect(changes[0].reason).toBe('Account created');
   });
 
   it('rejects DIRECTOR/SENIOR_LEAD_INSTRUCTOR with no campusId (400)', async () => {
@@ -124,29 +142,28 @@ describe('POST /api/admin-users', () => {
 });
 
 describe('PATCH /api/admin-users/:id', () => {
-  it('changing role INTO a campus-scoped role requires a campusId in the same request', async () => {
-    const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'AD11' });
-    const defaultCampus = await getDefaultCampus(workspace.id);
-    const created = (await agent.post('/api/admin-users').send({ email: 'x@ad11.example', password: 'pw123456', role: 'ADMIN' })).body;
+  it('400s if the body includes role — must use PATCH /:id/role instead', async () => {
+    const { agent } = await signupAdmin(app, { workspaceCode: 'AD11C' });
+    const created = (await agent.post('/api/admin-users').send({ email: 'x@ad11c.example', password: 'pw123456', role: 'ADMIN' })).body;
 
-    const withoutCampus = await agent.patch(`/api/admin-users/${created.id}`).send({ role: 'DIRECTOR' });
-    expect(withoutCampus.status).toBe(400);
-
-    const withCampus = await agent.patch(`/api/admin-users/${created.id}`).send({ role: 'DIRECTOR', campusId: defaultCampus.id });
-    expect(withCampus.status).toBe(200);
-    expect(withCampus.body.campus.id).toBe(defaultCampus.id);
+    const res = await agent.patch(`/api/admin-users/${created.id}`).send({ role: 'DIRECTOR' });
+    expect(res.status).toBe(400);
+    // Untouched — the generic PATCH never applied the rejected role change.
+    const list = await agent.get('/api/admin-users');
+    expect(list.body.admins.find((a: any) => a.id === created.id).role).toBe('ADMIN');
   });
 
-  it('changing role OUT of a campus-scoped role clears campusId regardless of what is sent', async () => {
-    const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'AD12' });
+  it('a plain campusId change (no role change) still works, cross-validated against the existing role', async () => {
+    const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'AD11' });
     const defaultCampus = await getDefaultCampus(workspace.id);
+    const second = (await agent.post('/api/campuses').send({ name: 'Second' })).body;
     const created = (
-      await agent.post('/api/admin-users').send({ email: 'x@ad12.example', password: 'pw123456', role: 'DIRECTOR', campusId: defaultCampus.id })
+      await agent.post('/api/admin-users').send({ email: 'x@ad11.example', password: 'pw123456', role: 'DIRECTOR', campusId: defaultCampus.id })
     ).body;
 
-    const res = await agent.patch(`/api/admin-users/${created.id}`).send({ role: 'ADMIN', campusId: defaultCampus.id });
+    const res = await agent.patch(`/api/admin-users/${created.id}`).send({ campusId: second.id });
     expect(res.status).toBe(200);
-    expect(res.body.campus).toBeNull();
+    expect(res.body.campus.id).toBe(second.id);
   });
 
   it('can update email and password without touching role/campus', async () => {
@@ -183,6 +200,100 @@ describe('PATCH /api/admin-users/:id', () => {
     const otherAdminId = (await otherAgent.get('/api/admin-users')).body.admins[0].id;
 
     const res = await agent.patch(`/api/admin-users/${otherAdminId}`).send({ email: 'hijack@ad14.example' });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('PATCH /api/admin-users/:id/role', () => {
+  it('changing role INTO a campus-scoped role requires a campusId in the same request, and logs a RoleChange row', async () => {
+    const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'AR1' });
+    const defaultCampus = await getDefaultCampus(workspace.id);
+    const created = (await agent.post('/api/admin-users').send({ email: 'x@ar1.example', password: 'pw123456', role: 'ADMIN' })).body;
+
+    const withoutCampus = await agent.patch(`/api/admin-users/${created.id}/role`).send({ newRole: 'DIRECTOR', reason: 'Reorg' });
+    expect(withoutCampus.status).toBe(400);
+
+    const withCampus = await agent
+      .patch(`/api/admin-users/${created.id}/role`)
+      .send({ newRole: 'DIRECTOR', campusId: defaultCampus.id, reason: 'Reorg' });
+    expect(withCampus.status).toBe(200);
+    expect(withCampus.body.campus.id).toBe(defaultCampus.id);
+
+    const list = await agent.get('/api/admin-users');
+    expect(list.body.admins.find((a: any) => a.id === created.id).role).toBe('DIRECTOR');
+
+    const changes = await prisma.roleChange.findMany({ where: { targetUserId: created.id }, orderBy: { createdAt: 'asc' } });
+    // [0] is the creation-time log (oldRole: null); [1] is this promotion.
+    expect(changes).toHaveLength(2);
+    expect(changes[1].oldRole).toBe('ADMIN');
+    expect(changes[1].newRole).toBe('DIRECTOR');
+    expect(changes[1].reason).toBe('Reorg');
+  });
+
+  it('changing role OUT of a campus-scoped role clears campusId regardless of what is sent', async () => {
+    const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'AR2' });
+    const defaultCampus = await getDefaultCampus(workspace.id);
+    const created = (
+      await agent.post('/api/admin-users').send({ email: 'x@ar2.example', password: 'pw123456', role: 'DIRECTOR', campusId: defaultCampus.id })
+    ).body;
+
+    const res = await agent
+      .patch(`/api/admin-users/${created.id}/role`)
+      .send({ newRole: 'ADMIN', campusId: defaultCampus.id, reason: 'Promotion' });
+    expect(res.status).toBe(200);
+    expect(res.body.campus).toBeNull();
+  });
+
+  it('400s a missing or blank reason', async () => {
+    const { agent } = await signupAdmin(app, { workspaceCode: 'AR3' });
+    const created = (await agent.post('/api/admin-users').send({ email: 'x@ar3.example', password: 'pw123456', role: 'ADMIN' })).body;
+
+    expect((await agent.patch(`/api/admin-users/${created.id}/role`).send({ newRole: 'CEO' })).status).toBe(400);
+    expect((await agent.patch(`/api/admin-users/${created.id}/role`).send({ newRole: 'CEO', reason: '   ' })).status).toBe(400);
+  });
+
+  it('409s changing your own role', async () => {
+    const { agent } = await signupAdmin(app, { workspaceCode: 'AR4' });
+    const self = (await agent.get('/api/admin-users')).body.admins[0];
+
+    const res = await agent.patch(`/api/admin-users/${self.id}/role`).send({ newRole: 'CEO', reason: 'Self promotion attempt' });
+    expect(res.status).toBe(409);
+  });
+
+  it('409s demoting the last remaining active Admin/CEO', async () => {
+    const { agent: rootAgent, workspace } = await signupAdmin(app, { workspaceCode: 'AR5' });
+    const ceoAgent = await seedAdminWithRole(app, workspace.id, 'ceo@ar5.example', 'CEO');
+    const rootSelf = (await rootAgent.get('/api/admin-users')).body.admins.find((a: any) => a.email !== 'ceo@ar5.example');
+
+    // ceo demotes root — 1 unrestricted admin (ceo) remains. Allowed.
+    expect(
+      (await ceoAgent.patch(`/api/admin-users/${rootSelf.id}/role`).send({ newRole: 'DIRECTOR', campusId: (await getDefaultCampus(workspace.id)).id, reason: 'x' })).status
+    ).toBe(200);
+
+    const ceoSelf = (await ceoAgent.get('/api/admin-users')).body.admins.find((a: any) => a.email === 'ceo@ar5.example');
+    // root's session is still authenticated (stale but valid, see the
+    // analogous last-admin test for /deactivate) — attempting to demote
+    // ceo, the last active unrestricted admin, is blocked.
+    const res = await rootAgent.patch(`/api/admin-users/${ceoSelf.id}/role`).send({ newRole: 'DIRECTOR', campusId: (await getDefaultCampus(workspace.id)).id, reason: 'x' });
+    expect(res.status).toBe(409);
+  });
+
+  it('404s an admin id from another workspace', async () => {
+    const { agent } = await signupAdmin(app, { workspaceCode: 'AR6' });
+    const { agent: otherAgent } = await signupAdmin(app, { workspaceCode: 'AR6B' });
+    const otherAdminId = (await otherAgent.get('/api/admin-users')).body.admins[0].id;
+
+    const res = await agent.patch(`/api/admin-users/${otherAdminId}/role`).send({ newRole: 'CEO', reason: 'hijack' });
+    expect(res.status).toBe(404);
+  });
+
+  it('only ADMIN/CEO can hit this endpoint', async () => {
+    const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'AR7' });
+    const defaultCampus = await getDefaultCampus(workspace.id);
+    const directorAgent = await seedAdminWithRole(app, workspace.id, 'director@ar7.example', 'DIRECTOR', { campusId: defaultCampus.id });
+    const target = (await agent.post('/api/admin-users').send({ email: 'x@ar7.example', password: 'pw123456', role: 'ADMIN' })).body;
+
+    const res = await directorAgent.patch(`/api/admin-users/${target.id}/role`).send({ newRole: 'CEO', reason: 'x' });
     expect(res.status).toBe(404);
   });
 });

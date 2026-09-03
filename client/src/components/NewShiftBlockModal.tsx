@@ -6,6 +6,7 @@ import { useEmployees } from '../hooks/useEmployees';
 import { useShifts, useBulkShiftMutation } from '../hooks/useShifts';
 import { api } from '../lib/api';
 import { BulkShiftRow, SESSION_TYPES } from '../lib/types';
+import { DATA_TYPE_INFO } from '../lib/constants';
 
 function timeRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
   return aStart < bEnd && bStart < aEnd;
@@ -19,7 +20,6 @@ function timeRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: s
 // re-checked server-side (POST /shifts/bulk) as the source of truth.
 export default function NewShiftBlockModal({ date, onClose }: { date: string; onClose: () => void }) {
   const { data: layout } = useLayout();
-  const { data: employeesData } = useEmployees();
   const [blockDate, setBlockDate] = useState(date);
   const { data: shiftsData } = useShifts(blockDate);
   const bulkCreate = useBulkShiftMutation();
@@ -27,6 +27,8 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
   const sections = layout?.sections ?? [];
   const [sectionId, setSectionId] = useState('');
   const [locationId, setLocationId] = useState('');
+  const section = sections.find((s) => s.id === sectionId);
+  const { data: employeesData } = useEmployees(section?.campusId);
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('17:00');
   const [sessionType, setSessionType] = useState('');
@@ -36,7 +38,6 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ createdCount: number; skipped: { subRowId: string; reason: string }[] } | null>(null);
 
-  const section = sections.find((s) => s.id === sectionId);
   const locations = section?.locations ?? [];
   const location = locations.find((l) => l.id === locationId);
   const subRows = location?.subRows ?? [];
@@ -227,7 +228,7 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
                 <div key={sr.id} className={`border rounded-md p-3 ${conflict ? 'border-amber-200 bg-amber-50' : 'border-slate-200'}`}>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium text-slate-700">{sr.label}</span>
-                    <span className="text-[10px] uppercase tracking-wide text-slate-400">{sr.dataType}</span>
+                    <span className="text-[10px] uppercase tracking-wide text-slate-400">{DATA_TYPE_INFO[sr.dataType].label}</span>
                   </div>
                   {conflict ? (
                     <p className="text-xs text-amber-700">Already scheduled at this time — skipped</p>

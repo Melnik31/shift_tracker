@@ -118,6 +118,80 @@ describe('layout CRUD (sections/locations/subrows)', () => {
   });
 });
 
+describe('duplicating a location', () => {
+  async function makeLocationWithSubRows(agent: Awaited<ReturnType<typeof signupAdmin>>['agent']) {
+    const section = (await agent.post('/api/layout/sections').send({ name: 'ICE' })).body;
+    const location = (await agent.post('/api/layout/locations').send({ sectionId: section.id, name: 'Rink C' })).body;
+    const tier = (await agent.post('/api/layout/subrows').send({ locationId: location.id, label: 'Tier', dataType: 'BADGE' })).body;
+    const coach = (await agent.post('/api/layout/subrows').send({ locationId: location.id, label: 'Skater Coach', dataType: 'STAFF' })).body;
+    return { section, location, tier, coach };
+  }
+
+  it('copies every source SubRow (label, dataType, order) onto a new Location in the same Section', async () => {
+    const { agent } = await signupAdmin(app);
+    const { section, location } = await makeLocationWithSubRows(agent);
+
+    const res = await agent.post(`/api/layout/locations/${location.id}/duplicate`).send({ newName: 'Rink B' });
+    expect(res.status).toBe(201);
+    expect(res.body.name).toBe('Rink B');
+    expect(res.body.sectionId).toBe(section.id);
+    expect(res.body.subRows.map((sr: any) => ({ label: sr.label, dataType: sr.dataType }))).toEqual([
+      { label: 'Tier', dataType: 'BADGE' },
+      { label: 'Skater Coach', dataType: 'STAFF' },
+    ]);
+    // sortOrder preserved relative to the source, not renumbered
+    expect(res.body.subRows[0].sortOrder).toBeLessThan(res.body.subRows[1].sortOrder);
+
+    // Persisted, not just in the response — and the original is untouched.
+    const tree = await agent.get('/api/layout');
+    const original = tree.body.sections[0].locations.find((l: any) => l.name === 'Rink C');
+    const copy = tree.body.sections[0].locations.find((l: any) => l.name === 'Rink B');
+    expect(original.subRows).toHaveLength(2);
+    expect(copy.subRows).toHaveLength(2);
+  });
+
+  it('duplicating a location with zero sub-rows works (empty copy)', async () => {
+    const { agent } = await signupAdmin(app);
+    const section = (await agent.post('/api/layout/sections').send({ name: 'Empty Section' })).body;
+    const location = (await agent.post('/api/layout/locations').send({ sectionId: section.id, name: 'Blank' })).body;
+
+    const res = await agent.post(`/api/layout/locations/${location.id}/duplicate`).send({ newName: 'Blank Copy' });
+    expect(res.status).toBe(201);
+    expect(res.body.subRows).toEqual([]);
+  });
+
+  it('does not copy Shift/CellValue data from the source location', async () => {
+    const { agent } = await signupAdmin(app);
+    const { coach } = await makeLocationWithSubRows(agent);
+    await agent.post('/api/shifts').send({ subRowId: coach.id, date: '2026-09-01', startTime: '09:00', endTime: '17:00' });
+
+    const dup = await agent.post(`/api/layout/locations/${coach.locationId}/duplicate`).send({ newName: 'Rink B' });
+    const newCoachSubRow = dup.body.subRows.find((sr: any) => sr.label === 'Skater Coach');
+
+    const shifts = await agent.get('/api/shifts').query({ date: '2026-09-01' });
+    expect(shifts.body.shifts).toHaveLength(1);
+    expect(shifts.body.shifts[0].subRowId).not.toBe(newCoachSubRow.id);
+    expect(shifts.body.shifts[0].subRowId).toBe(coach.id);
+  });
+
+  it('400s a blank or missing newName', async () => {
+    const { agent } = await signupAdmin(app);
+    const { location } = await makeLocationWithSubRows(agent);
+
+    expect((await agent.post(`/api/layout/locations/${location.id}/duplicate`).send({})).status).toBe(400);
+    expect((await agent.post(`/api/layout/locations/${location.id}/duplicate`).send({ newName: '   ' })).status).toBe(400);
+  });
+
+  it('404s a location id from another workspace', async () => {
+    const { agent } = await signupAdmin(app, { workspaceCode: 'DUP1' });
+    const { agent: otherAgent } = await signupAdmin(app, { workspaceCode: 'DUP1B' });
+    const { location } = await makeLocationWithSubRows(otherAgent);
+
+    const res = await agent.post(`/api/layout/locations/${location.id}/duplicate`).send({ newName: 'Hijacked' });
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('layout role gating (requireRole DIRECTOR/ADMIN/CEO)', () => {
   it('404s a COACH session (employee login) on both a read and a mutation route', async () => {
     const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'LROLE1' });

@@ -53,6 +53,18 @@ export async function cellValueInScope(cellValueId: string, workspaceId: string,
   });
 }
 
+// The Campus a SubRow's Shifts belong to (via Location -> Section) — used
+// to decide which Employees are eligible for STAFF assignment on it (same
+// Campus, or floating/campusId-null). Every Section has a required,
+// non-null campusId, so this is never itself null in practice.
+export async function campusIdForSubRow(subRowId: string): Promise<string | null> {
+  const subRow = await prisma.subRow.findUnique({
+    where: { id: subRowId },
+    select: { location: { select: { section: { select: { campusId: true } } } } },
+  });
+  return subRow?.location.section.campusId ?? null;
+}
+
 export async function fileUploadInScope(fileId: string, workspaceId: string, scope: CampusScope) {
   return prisma.fileUpload.findFirst({
     where: {

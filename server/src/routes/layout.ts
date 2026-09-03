@@ -131,6 +131,48 @@ router.post('/locations', async (req, res) => {
   res.status(201).json(location);
 });
 
+// Copies a Location's SubRow structure (label, dataType, order, config)
+// onto a brand-new Location in the same Section — the field template, not
+// the schedule. Never touches Shift/CellValue: those belong to the source
+// location's own timeline, not the copy. Lets an admin build "Rink B" from
+// "Rink C" in one click instead of re-entering every sub-row by hand.
+router.post('/locations/:id/duplicate', async (req, res) => {
+  const workspaceId = req.session.workspaceId!;
+  const scope = campusScopeFor(req);
+  const existing = await locationInScope(req.params.id, workspaceId, scope);
+  if (!existing) return res.status(404).json({ error: 'Location not found' });
+
+  const { newName } = req.body ?? {};
+  if (!newName || typeof newName !== 'string' || !newName.trim()) {
+    return res.status(400).json({ error: 'newName is required' });
+  }
+
+  const sourceSubRows = await prisma.subRow.findMany({ where: { locationId: existing.id }, orderBy: { sortOrder: 'asc' } });
+  const max = await prisma.location.aggregate({ where: { sectionId: existing.sectionId }, _max: { sortOrder: true } });
+
+  const newLocation = await prisma.location.create({
+    data: { sectionId: existing.sectionId, name: newName.trim(), sortOrder: (max._max.sortOrder ?? -1) + 1 },
+  });
+
+  if (sourceSubRows.length > 0) {
+    await prisma.subRow.createMany({
+      data: sourceSubRows.map((sr) => ({
+        locationId: newLocation.id,
+        label: sr.label,
+        dataType: sr.dataType,
+        sortOrder: sr.sortOrder,
+        config: sr.config,
+      })),
+    });
+  }
+
+  const full = await prisma.location.findUnique({
+    where: { id: newLocation.id },
+    include: { subRows: { orderBy: { sortOrder: 'asc' } } },
+  });
+  res.status(201).json(full);
+});
+
 router.patch('/locations/:id', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
   const scope = campusScopeFor(req);

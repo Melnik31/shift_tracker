@@ -78,6 +78,65 @@ describe('POST /api/auth/admin/login', () => {
       .send({ workspaceCode: 'LOGIN3B', email: 'shared@example.com', password: 'pw-a' });
     expect(res.status).toBe(401);
   });
+
+  it('the founding admin from signup never has mustChangePassword set', async () => {
+    const { agent } = await signupAdmin(app, { workspaceCode: 'LOGIN4', email: 'admin@login4.example', password: 'correct-horse' });
+    const res = await agent.post('/api/auth/admin/login').send({ workspaceCode: 'LOGIN4', email: 'admin@login4.example', password: 'correct-horse' });
+    expect(res.body.mustChangePassword).toBe(false);
+  });
+
+  it('an admin created via POST /api/admin-users has mustChangePassword: true on login, until they change it', async () => {
+    const { agent: rootAgent, workspace } = await signupAdmin(app, { workspaceCode: 'LOGIN5' });
+    await rootAgent.post('/api/admin-users').send({ email: 'new@login5.example', password: 'temp-pw-123', role: 'ADMIN' });
+
+    const firstLogin = await request(app)
+      .post('/api/auth/admin/login')
+      .send({ workspaceCode: workspace.workspaceCode, email: 'new@login5.example', password: 'temp-pw-123' });
+    expect(firstLogin.status).toBe(200);
+    expect(firstLogin.body.mustChangePassword).toBe(true);
+
+    const newAdminAgent = request.agent(app);
+    await newAdminAgent.post('/api/auth/admin/login').send({ workspaceCode: workspace.workspaceCode, email: 'new@login5.example', password: 'temp-pw-123' });
+    const changed = await newAdminAgent.post('/api/auth/admin/change-password').send({ newPassword: 'a-real-password-now' });
+    expect(changed.status).toBe(200);
+
+    const secondLogin = await request(app)
+      .post('/api/auth/admin/login')
+      .send({ workspaceCode: workspace.workspaceCode, email: 'new@login5.example', password: 'a-real-password-now' });
+    expect(secondLogin.status).toBe(200);
+    expect(secondLogin.body.mustChangePassword).toBe(false);
+
+    // The old temp password no longer works.
+    const oldPasswordLogin = await request(app)
+      .post('/api/auth/admin/login')
+      .send({ workspaceCode: workspace.workspaceCode, email: 'new@login5.example', password: 'temp-pw-123' });
+    expect(oldPasswordLogin.status).toBe(401);
+  });
+});
+
+describe('POST /api/auth/admin/change-password', () => {
+  it('requires authentication', async () => {
+    const res = await request(app).post('/api/auth/admin/change-password').send({ newPassword: 'whatever12345' });
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects a password shorter than 8 characters', async () => {
+    const { agent } = await signupAdmin(app, { workspaceCode: 'CHPW1' });
+    const res = await agent.post('/api/auth/admin/change-password').send({ newPassword: 'short' });
+    expect(res.status).toBe(400);
+  });
+
+  it('/me reflects mustChangePassword going false immediately after a successful change', async () => {
+    const { agent: rootAgent, workspace } = await signupAdmin(app, { workspaceCode: 'CHPW2' });
+    await rootAgent.post('/api/admin-users').send({ email: 'new@chpw2.example', password: 'temp-pw-123', role: 'ADMIN' });
+
+    const newAdminAgent = request.agent(app);
+    await newAdminAgent.post('/api/auth/admin/login').send({ workspaceCode: workspace.workspaceCode, email: 'new@chpw2.example', password: 'temp-pw-123' });
+    expect((await newAdminAgent.get('/api/auth/me')).body.admin.mustChangePassword).toBe(true);
+
+    await newAdminAgent.post('/api/auth/admin/change-password').send({ newPassword: 'a-real-password-now' });
+    expect((await newAdminAgent.get('/api/auth/me')).body.admin.mustChangePassword).toBe(false);
+  });
 });
 
 describe('POST /api/auth/employee/login', () => {

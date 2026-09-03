@@ -12,6 +12,7 @@ import { useEmployees } from '../hooks/useEmployees';
 import { useShifts } from '../hooks/useShifts';
 import { api } from '../lib/api';
 import { Shift, SESSION_TYPES, SubRow } from '../lib/types';
+import { DATA_TYPE_INFO } from '../lib/constants';
 
 function timeRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
   return aStart < bEnd && bStart < aEnd;
@@ -38,10 +39,11 @@ interface Props {
 // shared start/end doesn't cause rows to appear/disappear mid-edit.
 export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSaved }: Props) {
   const { data: layout } = useLayout();
-  const { data: employeesData } = useEmployees();
   const { data: shiftsData } = useShifts(date);
 
-  const location = layout?.sections.flatMap((s) => s.locations).find((l) => l.id === subRow.locationId) ?? null;
+  const section = layout?.sections.find((s) => s.locations.some((l) => l.id === subRow.locationId)) ?? null;
+  const location = section?.locations.find((l) => l.id === subRow.locationId) ?? null;
+  const { data: employeesData } = useEmployees(section?.campusId);
   const subRows = location?.subRows ?? [];
   const employees = employeesData?.employees ?? [];
   const shifts = shiftsData?.shifts ?? [];
@@ -234,7 +236,7 @@ export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSa
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-slate-700">{sr.label}</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase tracking-wide text-slate-400">{sr.dataType}</span>
+                    <span className="text-[10px] uppercase tracking-wide text-slate-400">{DATA_TYPE_INFO[sr.dataType].label}</span>
                     {member && (
                       <button type="button" onClick={() => handleRemoveRow(sr.id, member.id)} className="text-xs text-red-500 hover:underline">
                         Remove

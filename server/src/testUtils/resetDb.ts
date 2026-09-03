@@ -14,6 +14,7 @@ export async function resetDb() {
   await prisma.payrollPeriodReopen.deleteMany();
   await prisma.payrollPeriod.deleteMany();
   await prisma.employee.deleteMany();
+  await prisma.roleChange.deleteMany();
   await prisma.adminUser.deleteMany();
   await prisma.campus.deleteMany();
   await prisma.workspace.deleteMany();

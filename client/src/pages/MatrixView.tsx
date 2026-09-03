@@ -278,7 +278,7 @@ export default function MatrixView() {
       )}
 
       {showManageLayout && <ManageLayoutModal campusId={campusId} onClose={() => setShowManageLayout(false)} />}
-      {showManageTeam && <ManageTeamModal onClose={() => setShowManageTeam(false)} />}
+      {showManageTeam && <ManageTeamModal campusId={campusId} onClose={() => setShowManageTeam(false)} />}
       {showManageAdmins && <ManageAdminsModal onClose={() => setShowManageAdmins(false)} />}
       {showManageCampuses && <ManageCampusesModal onClose={() => setShowManageCampuses(false)} />}
       {showNewShiftBlock && <NewShiftBlockModal date={date} onClose={() => setShowNewShiftBlock(false)} />}
