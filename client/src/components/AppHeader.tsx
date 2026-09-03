@@ -16,6 +16,8 @@ interface Props {
   /** Range mode — used by the Daily Overview dashboard. Takes precedence over date/onDateChange when provided. */
   dateRange?: DateRange;
   onDateRangeChange?: (r: DateRange) => void;
+  /** Set false to hide the built-in "+ Add Shift" button — e.g. Matrix View, where "+ New Shift Block" is the primary creation action instead. */
+  showAddShiftButton?: boolean;
 }
 
 const tabClass = ({ isActive }: { isActive: boolean }) =>
@@ -30,6 +32,7 @@ export default function AppHeader({
   dateRange,
   onDateRangeChange,
   rightExtra,
+  showAddShiftButton = true,
 }: Props) {
   const { data: me, logout } = useAuth();
   const navigate = useNavigate();
@@ -76,9 +79,11 @@ export default function AppHeader({
             className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
           />
         )}
-        <button onClick={() => setShowAddShift(true)} className="rounded-md bg-slate-900 text-white px-3 py-1.5 text-sm font-medium hover:bg-slate-700">
-          + Add Shift
-        </button>
+        {showAddShiftButton && (
+          <button onClick={() => setShowAddShift(true)} className="rounded-md bg-slate-900 text-white px-3 py-1.5 text-sm font-medium hover:bg-slate-700">
+            + Add Shift
+          </button>
+        )}
         {rightExtra}
         <button
           onClick={async () => {

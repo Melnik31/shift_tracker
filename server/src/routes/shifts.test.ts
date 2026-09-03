@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { createApp } from '../app';
 import { resetDb } from '../testUtils/resetDb';
-import { signupAdmin, loginEmployee, seedAdminWithRole } from '../testUtils/authHelpers';
+import { signupAdmin, loginEmployee, seedAdminWithRole, getDefaultCampus } from '../testUtils/authHelpers';
 
 const app = createApp();
 const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
@@ -403,7 +403,12 @@ describe('shifts role gating (requireRole DIRECTOR/ADMIN/CEO)', () => {
 
   it('DIRECTOR, ADMIN, and CEO all succeed identically', async () => {
     const { agent: adminAgent, workspace } = await signupAdmin(app, { workspaceCode: 'SROLE2' });
-    const directorAgent = await seedAdminWithRole(app, workspace.id, 'director@srole2.example', 'DIRECTOR');
+    // DIRECTOR is Campus-scoped (see campusIsolation.test.ts for the
+    // cross-campus restriction itself) — assigning them to the workspace's
+    // own default Campus is what "succeeds identically" means here: full
+    // capability within their campus, not cross-campus reach.
+    const defaultCampus = await getDefaultCampus(workspace.id);
+    const directorAgent = await seedAdminWithRole(app, workspace.id, 'director@srole2.example', 'DIRECTOR', { campusId: defaultCampus.id });
     const ceoAgent = await seedAdminWithRole(app, workspace.id, 'ceo@srole2.example', 'CEO');
     const subRow = await makeStatusSubRow(adminAgent);
 

@@ -1,20 +1,32 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AppHeader from '../components/AppHeader';
+import CampusSelector from '../components/CampusSelector';
+import NewShiftBlockModal from '../components/NewShiftBlockModal';
 import { useOverview } from '../hooks/useOverview';
-import { buildSectionColorMap, colorForEmployee, initials } from '../lib/colors';
-import { toMinutes, formatHours, formatTime12h } from '../lib/time';
-import { OPERATIONAL_START, OPERATIONAL_END } from '../lib/constants';
+import { colorForEmployee, initials } from '../lib/colors';
+import { toMinutes, fromMinutes, formatHours, formatTime12h } from '../lib/time';
+import { OPERATIONAL_START, OPERATIONAL_END, SESSION_TYPE_COLORS } from '../lib/constants';
 import { DateRange, defaultDateRange } from '../lib/dateRange';
 import { OverviewEmployee, OverviewDay } from '../lib/types';
+
+const NO_TYPE_COLOR = '#94a3b8'; // slate-400, for shifts with no sessionType set
+const PAID_BREAK_COLOR = '#22c55e'; // green-500 — used for both real between-shift gaps and the ice-prep buffer below, since both are the same "paid, not on the clock" category
+const ICE_SESSION_TYPE = 'Ice Session';
+const ICE_PREP_MINUTES = 30; // mirrors the payroll ice-prep rule (server/src/lib/payrollReview.ts) — display only, doesn't affect the hours shown on this page
+
+function sessionTypeColor(sessionType: string | null): string {
+  return (sessionType && SESSION_TYPE_COLORS[sessionType]) || NO_TYPE_COLOR;
+}
 
 export default function DashboardView() {
   const [dateRange, setDateRange] = useState<DateRange>(defaultDateRange());
   const [search, setSearch] = useState('');
-  const { data } = useOverview(dateRange.start, dateRange.end);
+  const [campusId, setCampusId] = useState<string | null>(null);
+  const [showNewShiftBlock, setShowNewShiftBlock] = useState(false);
+  const { data } = useOverview(dateRange.start, dateRange.end, campusId);
 
   const isMultiDay = dateRange.start !== dateRange.end;
-  const sectionColors = useMemo(() => buildSectionColorMap(data?.sections ?? []), [data?.sections]);
 
   const filteredEmployees = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -22,6 +34,28 @@ export default function DashboardView() {
     if (!term) return list;
     return list.filter((e) => e.name.toLowerCase().includes(term));
   }, [data?.employees, search]);
+
+  // Legend reflects only what's actually shown below, not every possible
+  // session type — an unused type (e.g. no one's scheduled Association today)
+  // has no business cluttering the key.
+  const { presentSessionTypes, hasUntypedShift, hasAnyPaidBreak } = useMemo(() => {
+    const types = new Set<string>();
+    let untyped = false;
+    let anyPaidBreak = false;
+    for (const emp of filteredEmployees) {
+      for (const day of emp.days) {
+        for (const s of day.shifts) {
+          if (s.sessionType) types.add(s.sessionType);
+          else untyped = true;
+        }
+        if (!isMultiDay) {
+          if (day.breakdown.gaps.some((g) => g.classification === 'PAID_BREAK')) anyPaidBreak = true;
+          if (day.shifts[0]?.sessionType === ICE_SESSION_TYPE) anyPaidBreak = true; // ice-prep buffer renders as a paid break too
+        }
+      }
+    }
+    return { presentSessionTypes: types, hasUntypedShift: untyped, hasAnyPaidBreak: anyPaidBreak };
+  }, [filteredEmployees, isMultiDay]);
 
   const periodLabel = formatPeriodLabel(dateRange);
   const totals = data?.totals;
@@ -36,7 +70,21 @@ export default function DashboardView() {
         searchPlaceholder="Search employees..."
         dateRange={dateRange}
         onDateRangeChange={setDateRange}
+        showAddShiftButton={false}
+        rightExtra={
+          <>
+            <CampusSelector value={campusId} onChange={setCampusId} />
+            <button
+              onClick={() => setShowNewShiftBlock(true)}
+              className="rounded-md bg-slate-900 text-white px-3 py-1.5 text-sm font-medium hover:bg-slate-700"
+            >
+              + New Shift Block
+            </button>
+          </>
+        }
       />
+
+      {showNewShiftBlock && <NewShiftBlockModal date={dateRange.start} onClose={() => setShowNewShiftBlock(false)} />}
 
       <main className="max-w-6xl mx-auto px-6 py-6">
         <div className="flex items-start justify-between flex-wrap gap-3 mb-4">
@@ -122,12 +170,26 @@ export default function DashboardView() {
               <p className="text-xs text-slate-400">Live view · {periodLabel}</p>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
-              {(data?.sections ?? []).map((s) => (
-                <span key={s.id} className="inline-flex items-center gap-1.5 text-xs text-slate-500">
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: sectionColors.get(s.id) }} />
-                  {s.name}
+              {Object.entries(SESSION_TYPE_COLORS)
+                .filter(([type]) => presentSessionTypes.has(type))
+                .map(([type, color]) => (
+                  <span key={type} className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+                    {type}
+                  </span>
+                ))}
+              {hasUntypedShift && (
+                <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: NO_TYPE_COLOR }} />
+                  No Type
                 </span>
-              ))}
+              )}
+              {hasAnyPaidBreak && (
+                <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: PAID_BREAK_COLOR }} />
+                  Paid Break
+                </span>
+              )}
             </div>
           </div>
 
@@ -149,7 +211,7 @@ export default function DashboardView() {
                   </thead>
                   <tbody>
                     {filteredEmployees.map((emp) => (
-                      <EmployeeRow key={emp.id} employee={emp} sectionColors={sectionColors} isMultiDay={isMultiDay} />
+                      <EmployeeRow key={emp.id} employee={emp} isMultiDay={isMultiDay} />
                     ))}
                   </tbody>
                 </table>
@@ -221,15 +283,7 @@ function StatCard({
   );
 }
 
-function EmployeeRow({
-  employee,
-  sectionColors,
-  isMultiDay,
-}: {
-  employee: OverviewEmployee;
-  sectionColors: Map<string, string>;
-  isMultiDay: boolean;
-}) {
+function EmployeeRow({ employee, isMultiDay }: { employee: OverviewEmployee; isMultiDay: boolean }) {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -251,7 +305,7 @@ function EmployeeRow({
       </td>
 
       <td className="px-5 py-4 min-w-[280px]">
-        {isMultiDay ? <DaySparkline days={employee.days} /> : <SingleDayTimeline day={employee.days[0]} sectionColors={sectionColors} />}
+        {isMultiDay ? <DaySparkline days={employee.days} /> : <SingleDayTimeline day={employee.days[0]} />}
       </td>
 
       <td className="px-5 py-4 text-right whitespace-nowrap">{formatHours(employee.totalBreakdown.activeHours)}</td>
@@ -276,33 +330,78 @@ function EmployeeRow({
   );
 }
 
-function SingleDayTimeline({ day, sectionColors }: { day: OverviewDay | undefined; sectionColors: Map<string, string> }) {
+function SingleDayTimeline({ day }: { day: OverviewDay | undefined }) {
   const windowStart = toMinutes(OPERATIONAL_START);
   const windowEnd = toMinutes(OPERATIONAL_END);
   const totalWindow = windowEnd - windowStart;
   const shifts = day?.shifts ?? [];
+  // day.shifts is the same start-time-sorted array computeDailyBreakdown used
+  // to build day.breakdown.gaps, so afterIndex/afterIndex+1 line up directly.
+  const paidBreaks = (day?.breakdown.gaps ?? []).filter((g) => g.classification === 'PAID_BREAK');
+
+  // Display-only: mirrors the payroll ice-prep rule visually (first shift of
+  // the day is an Ice Session -> 30 paid min immediately before it) without
+  // touching this page's own hours, which stay independent of payroll math.
+  const firstShift = shifts[0];
+  const icePrep =
+    firstShift?.sessionType === ICE_SESSION_TYPE
+      ? { start: Math.max(windowStart, toMinutes(firstShift.startTime) - ICE_PREP_MINUTES), end: toMinutes(firstShift.startTime) }
+      : null;
 
   return (
     <>
       <div className="relative h-2 bg-slate-100 rounded-full w-full">
+        {icePrep && (
+          <div
+            title={`Paid break (ice prep) · ${icePrep.end - icePrep.start}m`}
+            style={{
+              left: `${((icePrep.start - windowStart) / totalWindow) * 100}%`,
+              width: `${Math.max(((icePrep.end - icePrep.start) / totalWindow) * 100, 0.8)}%`,
+            }}
+            className="absolute top-0 h-full rounded-full bg-green-500"
+          />
+        )}
         {shifts.map((s) => {
           const left = ((toMinutes(s.startTime) - windowStart) / totalWindow) * 100;
           const width = Math.max(((toMinutes(s.endTime) - toMinutes(s.startTime)) / totalWindow) * 100, 0.8);
           return (
             <div
               key={s.shiftId}
-              title={`${s.sectionName} · ${formatTime12h(s.startTime)}–${formatTime12h(s.endTime)}`}
-              style={{ left: `${left}%`, width: `${width}%`, backgroundColor: sectionColors.get(s.sectionId) }}
+              title={`${s.sessionType ?? s.sectionName} · ${formatTime12h(s.startTime)}–${formatTime12h(s.endTime)}`}
+              style={{ left: `${left}%`, width: `${width}%`, backgroundColor: sessionTypeColor(s.sessionType) }}
               className="absolute top-0 h-full rounded-full"
+            />
+          );
+        })}
+        {paidBreaks.map((g, i) => {
+          const before = shifts[g.afterIndex];
+          const after = shifts[g.afterIndex + 1];
+          if (!before || !after) return null;
+          const gapStart = toMinutes(before.endTime);
+          const gapEnd = toMinutes(after.startTime);
+          const left = ((gapStart - windowStart) / totalWindow) * 100;
+          const width = Math.max(((gapEnd - gapStart) / totalWindow) * 100, 0.8);
+          return (
+            <div
+              key={`gap-${i}`}
+              title={`Paid break · ${g.gapMinutes}m`}
+              style={{ left: `${left}%`, width: `${width}%` }}
+              className="absolute top-0 h-full rounded-full bg-green-500"
             />
           );
         })}
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
+        {icePrep && (
+          <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-green-500" />
+            {formatTime12h(fromMinutes(icePrep.start))}–{formatTime12h(fromMinutes(icePrep.end))} Paid Break
+          </span>
+        )}
         {shifts.map((s) => (
           <span key={s.shiftId} className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: sectionColors.get(s.sectionId) }} />
-            {formatTime12h(s.startTime)}–{formatTime12h(s.endTime)} {s.sectionName}
+            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: sessionTypeColor(s.sessionType) }} />
+            {formatTime12h(s.startTime)}–{formatTime12h(s.endTime)} {s.sessionType ?? s.sectionName}
           </span>
         ))}
       </div>

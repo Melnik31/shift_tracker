@@ -7,10 +7,9 @@ import {
   usePayrollReopens,
   usePayrollMutations,
 } from '../hooks/usePayroll';
-import { useEmployees } from '../hooks/useEmployees';
 import { colorForEmployee, initials } from '../lib/colors';
 import { formatHours } from '../lib/time';
-import { Employee, ExceptionKind, PayrollAdjustment, PayrollEmployeeSummary, PayrollPeriodReopen } from '../lib/types';
+import { ExceptionKind, PayrollAdjustment, PayrollEmployeeSummary, PayrollPeriodReopen } from '../lib/types';
 
 const EXCEPTION_LABELS: Record<ExceptionKind, string> = {
   MISSING_SESSION_TYPE: 'Missing type',
@@ -31,6 +30,8 @@ const EXCEPTION_COLORS: Record<ExceptionKind, string> = {
 export default function PayrollReview() {
   const [search, setSearch] = useState('');
   const [periodId, setPeriodId] = useState<string | null>(null);
+  const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
+  const [adjustingEmployeeId, setAdjustingEmployeeId] = useState<string | null>(null);
   const [newStart, setNewStart] = useState('');
   const [newEnd, setNewEnd] = useState('');
   const [periodError, setPeriodError] = useState<string | null>(null);
@@ -42,7 +43,6 @@ export default function PayrollReview() {
   const { data: detail } = usePayrollPeriodDetail(activePeriodId);
   const { data: adjustmentsData } = usePayrollAdjustments(activePeriodId);
   const { data: reopensData } = usePayrollReopens(activePeriodId);
-  const { data: employeesData } = useEmployees();
   const { createPeriod, markReviewed, approve, createAdjustment, reopenPeriod, deletePeriod } = usePayrollMutations();
 
   const period = detail?.period;
@@ -171,11 +171,22 @@ export default function PayrollReview() {
                     <th className="px-5 py-2 font-medium text-right">Adjustments</th>
                     <th className="px-5 py-2 font-medium text-right">Total</th>
                     <th className="px-5 py-2 font-medium">Exceptions</th>
+                    <th className="px-5 py-2 font-medium text-right"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredEmployees.map((e) => (
-                    <EmployeeRow key={e.employeeId} summary={e} />
+                    <EmployeeRow
+                      key={e.employeeId}
+                      summary={e}
+                      expanded={expandedEmployeeId === e.employeeId}
+                      onToggleExpand={() => setExpandedEmployeeId((cur) => (cur === e.employeeId ? null : e.employeeId))}
+                      adjusting={adjustingEmployeeId === e.employeeId}
+                      onToggleAdjust={() => setAdjustingEmployeeId((cur) => (cur === e.employeeId ? null : e.employeeId))}
+                      onCreateAdjustment={(vars) =>
+                        createAdjustment.mutateAsync({ periodId: period.id, employeeId: e.employeeId, ...vars })
+                      }
+                    />
                   ))}
                 </tbody>
               </table>
@@ -184,12 +195,7 @@ export default function PayrollReview() {
               )}
             </div>
 
-            <AdjustmentsPanel
-              periodId={period.id}
-              employees={employeesData?.employees ?? []}
-              adjustments={adjustmentsData?.adjustments ?? []}
-              onCreate={(vars) => createAdjustment.mutateAsync(vars)}
-            />
+            <AdjustmentsPanel adjustments={adjustmentsData?.adjustments ?? []} />
 
             {(reopensData?.reopens.length ?? 0) > 0 && <ReopenHistory reopens={reopensData!.reopens} />}
           </>
@@ -205,88 +211,228 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`rounded-full text-xs font-semibold px-3 py-1.5 uppercase tracking-wide ${cls}`}>{status}</span>;
 }
 
-function EmployeeRow({ summary }: { summary: PayrollEmployeeSummary }) {
+function EmployeeRow({
+  summary,
+  expanded,
+  onToggleExpand,
+  adjusting,
+  onToggleAdjust,
+  onCreateAdjustment,
+}: {
+  summary: PayrollEmployeeSummary;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  adjusting: boolean;
+  onToggleAdjust: () => void;
+  onCreateAdjustment: (vars: { deltaMinutes: number; reason: string }) => Promise<unknown>;
+}) {
   return (
-    <tr className="border-t border-slate-50 align-top">
-      <td className="px-5 py-4 w-56">
-        <div className="flex items-center gap-3">
-          <span
-            className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0"
-            style={{ backgroundColor: colorForEmployee(summary.employeeId) }}
-          >
-            {initials(summary.employeeName)}
-          </span>
-          <span className="font-medium text-slate-800">{summary.employeeName}</span>
-        </div>
-      </td>
-      <td className="px-5 py-4 text-right whitespace-nowrap">{formatHours(summary.payableHours)}</td>
-      <td className="px-5 py-4 text-right whitespace-nowrap">
-        {summary.adjustmentHours === 0 ? '—' : formatHours(summary.adjustmentHours)}
-      </td>
-      <td className="px-5 py-4 text-right whitespace-nowrap font-medium text-slate-900">{formatHours(summary.totalPayableHours)}</td>
-      <td className="px-5 py-4">
-        {summary.exceptions.length === 0 ? (
-          <span className="text-xs text-slate-300">—</span>
-        ) : (
-          <div className="flex flex-wrap gap-1 max-w-xs">
-            {summary.exceptions.map((ex, i) => (
-              <span
-                key={i}
-                title={ex.detail}
-                className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${EXCEPTION_COLORS[ex.kind]}`}
-              >
-                {EXCEPTION_LABELS[ex.kind]}
-              </span>
-            ))}
+    <>
+      <tr
+        onClick={onToggleExpand}
+        className={`border-t border-slate-50 align-top cursor-pointer hover:bg-slate-50 ${expanded ? 'bg-slate-50' : ''}`}
+      >
+        <td className="px-5 py-4 w-56">
+          <div className="flex items-center gap-2">
+            <span className={`text-slate-400 text-xs transition-transform ${expanded ? 'rotate-90' : ''}`}>▶</span>
+            <span
+              className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0"
+              style={{ backgroundColor: colorForEmployee(summary.employeeId) }}
+            >
+              {initials(summary.employeeName)}
+            </span>
+            <span className="font-medium text-slate-800">{summary.employeeName}</span>
           </div>
-        )}
-      </td>
-    </tr>
+        </td>
+        <td className="px-5 py-4 text-right whitespace-nowrap">{formatHours(summary.payableHours)}</td>
+        <td className="px-5 py-4 text-right whitespace-nowrap">
+          {summary.adjustmentHours === 0 ? '—' : formatHours(summary.adjustmentHours)}
+        </td>
+        <td className="px-5 py-4 text-right whitespace-nowrap font-medium text-slate-900">{formatHours(summary.totalPayableHours)}</td>
+        <td className="px-5 py-4">
+          {summary.exceptions.length === 0 ? (
+            <span className="text-xs text-slate-300">—</span>
+          ) : (
+            <div className="flex flex-wrap gap-1 max-w-xs">
+              {summary.exceptions.map((ex, i) => (
+                <span
+                  key={i}
+                  title={ex.detail}
+                  className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${EXCEPTION_COLORS[ex.kind]}`}
+                >
+                  {EXCEPTION_LABELS[ex.kind]}
+                </span>
+              ))}
+            </div>
+          )}
+        </td>
+        <td className="px-5 py-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={onToggleAdjust}
+            className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
+          >
+            + Adjustment
+          </button>
+        </td>
+      </tr>
+      {expanded && (
+        <tr className="bg-slate-50">
+          <td colSpan={6} className="px-5 py-4 border-t border-b border-slate-100">
+            <EmployeeBreakdown summary={summary} />
+          </td>
+        </tr>
+      )}
+      {adjusting && (
+        <tr className="bg-slate-50">
+          <td colSpan={6} className="px-5 py-4 border-t border-b border-slate-100" onClick={(e) => e.stopPropagation()}>
+            <AdjustmentInlineForm employeeName={summary.employeeName} onCreate={onCreateAdjustment} onDone={onToggleAdjust} />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
-function AdjustmentsPanel({
-  periodId,
-  employees,
-  adjustments,
+function AdjustmentInlineForm({
+  employeeName,
   onCreate,
+  onDone,
 }: {
-  periodId: string;
-  employees: Employee[];
-  adjustments: PayrollAdjustment[];
-  onCreate: (vars: { periodId: string; employeeId: string; deltaMinutes: number; reason: string }) => Promise<unknown>;
+  employeeName: string;
+  onCreate: (vars: { deltaMinutes: number; reason: string }) => Promise<unknown>;
+  onDone: () => void;
 }) {
-  const [employeeId, setEmployeeId] = useState('');
   const [deltaMinutes, setDeltaMinutes] = useState('');
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  async function onAdd(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     const minutes = Number(deltaMinutes);
-    if (!employeeId || !minutes || !reason.trim()) {
-      setError('Employee, a nonzero delta, and a reason are all required');
+    if (!minutes || !reason.trim()) {
+      setError('A nonzero delta and a reason are required');
       return;
     }
     try {
-      await onCreate({ periodId, employeeId, deltaMinutes: minutes, reason: reason.trim() });
-      setEmployeeId('');
-      setDeltaMinutes('');
-      setReason('');
+      await onCreate({ deltaMinutes: minutes, reason: reason.trim() });
+      onDone();
     } catch (err: any) {
       setError(err.message ?? 'Could not create adjustment');
     }
   }
 
   return (
+    <form onSubmit={onSubmit} className="flex items-end gap-2 flex-wrap max-w-xl">
+      <p className="w-full text-xs text-slate-500 mb-1">
+        Adjustment for <span className="font-medium text-slate-700">{employeeName}</span>
+      </p>
+      <div>
+        <label className="block text-xs text-slate-500 mb-1">Delta (minutes)</label>
+        <input
+          autoFocus
+          type="number"
+          value={deltaMinutes}
+          onChange={(e) => setDeltaMinutes(e.target.value)}
+          placeholder="e.g. 60 or -30"
+          className="w-28 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+        />
+      </div>
+      <div className="flex-1 min-w-[200px]">
+        <label className="block text-xs text-slate-500 mb-1">Reason</label>
+        <input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+          placeholder="e.g. Missed clock-in"
+        />
+      </div>
+      <button type="submit" className="rounded-md bg-slate-900 text-white px-4 py-1.5 text-sm font-medium hover:bg-slate-700">
+        Add
+      </button>
+      <button type="button" onClick={onDone} className="text-sm text-slate-500 px-2 py-1.5 hover:bg-slate-100 rounded-md">
+        Cancel
+      </button>
+      {error && <p className="w-full text-xs text-red-600">{error}</p>}
+    </form>
+  );
+}
+
+// Individual drill-down for one employee: the same figures rolled up in
+// their table row, broken out — paid break time on its own, hours by
+// session type, and every exception in full (not just the badge label).
+function EmployeeBreakdown({ summary }: { summary: PayrollEmployeeSummary }) {
+  const sessionEntries = Object.entries(summary.sessionTypeHours)
+    .filter(([, hours]) => hours > 0)
+    .sort((a, b) => b[1] - a[1]);
+
+  return (
+    <div className="max-w-2xl">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+        <BreakdownStat label="Payable" value={formatHours(summary.payableHours)} />
+        <BreakdownStat label="Paid Break" value={formatHours(summary.paidBreakHours)} />
+        <BreakdownStat label="Adjustments" value={summary.adjustmentHours === 0 ? '—' : formatHours(summary.adjustmentHours)} />
+        <BreakdownStat label="Total" value={formatHours(summary.totalPayableHours)} emphasize />
+      </div>
+
+      <div className="mb-4">
+        <p className="text-xs font-medium text-slate-500 mb-1.5">By session type</p>
+        {sessionEntries.length === 0 ? (
+          <p className="text-xs text-slate-400">No shifts in this period.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {sessionEntries.map(([type, hours]) => (
+              <span key={type} className="inline-flex items-center gap-1.5 rounded-md bg-white border border-slate-200 px-2.5 py-1 text-xs">
+                <span className="text-slate-500">{type}</span>
+                <span className="font-medium text-slate-800">{formatHours(hours)}</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {summary.exceptions.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-slate-500 mb-1.5">Exceptions</p>
+          <ul className="space-y-1.5">
+            {summary.exceptions.map((ex, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs text-slate-600">
+                <span
+                  className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium flex-shrink-0 ${EXCEPTION_COLORS[ex.kind]}`}
+                >
+                  {EXCEPTION_LABELS[ex.kind]}
+                </span>
+                <span>
+                  <span className="text-slate-400">{ex.date}</span> — {ex.detail}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BreakdownStat({ label, value, emphasize }: { label: string; value: string; emphasize?: boolean }) {
+  return (
+    <div>
+      <p className="text-[11px] text-slate-400 uppercase tracking-wide">{label}</p>
+      <p className={emphasize ? 'font-semibold text-slate-900' : 'text-slate-700'}>{value}</p>
+    </div>
+  );
+}
+
+function AdjustmentsPanel({ adjustments }: { adjustments: PayrollAdjustment[] }) {
+  return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
       <h3 className="font-semibold text-slate-800 mb-3">Payroll Adjustments</h3>
       <p className="text-xs text-slate-400 mb-3">
         The sanctioned way to correct payable hours once a period is approved — never edits shift history directly.
+        Use the "+ Adjustment" button on an employee's row above to add one.
       </p>
 
-      <ul className="space-y-2 mb-4">
+      <ul className="space-y-2">
         {adjustments.map((a) => (
           <li key={a.id} className="flex items-center justify-between text-sm border border-slate-100 rounded-md px-3 py-2">
             <div>
@@ -303,43 +449,6 @@ function AdjustmentsPanel({
         ))}
         {adjustments.length === 0 && <p className="text-sm text-slate-400">No adjustments yet.</p>}
       </ul>
-
-      <form onSubmit={onAdd} className="border-t border-slate-100 pt-4 flex gap-2 items-end flex-wrap">
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">Employee</label>
-          <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
-            <option value="">Select…</option>
-            {employees.map((emp) => (
-              <option key={emp.id} value={emp.id}>
-                {emp.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">Delta (minutes)</label>
-          <input
-            type="number"
-            value={deltaMinutes}
-            onChange={(e) => setDeltaMinutes(e.target.value)}
-            placeholder="e.g. 60 or -30"
-            className="w-28 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-          />
-        </div>
-        <div className="flex-1 min-w-[200px]">
-          <label className="block text-xs text-slate-500 mb-1">Reason</label>
-          <input
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-            placeholder="e.g. Missed clock-in"
-          />
-        </div>
-        <button type="submit" className="rounded-md bg-slate-900 text-white px-4 py-1.5 text-sm font-medium hover:bg-slate-700">
-          Add
-        </button>
-      </form>
-      {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
     </div>
   );
 }

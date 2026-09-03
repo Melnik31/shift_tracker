@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createApp } from '../app';
 import { resetDb } from '../testUtils/resetDb';
-import { signupAdmin, loginEmployee, seedAdminWithRole } from '../testUtils/authHelpers';
+import { signupAdmin, loginEmployee, seedAdminWithRole, getDefaultCampus } from '../testUtils/authHelpers';
 
 const app = createApp();
 
@@ -152,6 +152,8 @@ describe('payroll period review detail: payable hours + exceptions', () => {
     await createAssignedShift(agent, { subRowId: subRow.id, date: '2026-09-01', startTime: '12:00', endTime: '14:00', employeeId: employee.id, sessionType: 'Workout' });
 
     // Day 2: one 13h shift (over the 12h placeholder threshold) + one cancelled shift excluded from hours.
+    // It's the day's only (first) active shift and it's an Ice Session, so it
+    // also picks up the +0.5h ice-prep bonus: 13h + 0.5h = 13.5h that day.
     await createAssignedShift(agent, { subRowId: subRow.id, date: '2026-09-02', startTime: '06:00', endTime: '19:00', employeeId: employee.id, sessionType: 'Ice Session' });
     await createAssignedShift(agent, { subRowId: subRow.id, date: '2026-09-02', startTime: '06:00', endTime: '08:00', employeeId: employee.id, cancelled: true });
 
@@ -160,9 +162,9 @@ describe('payroll period review detail: payable hours + exceptions', () => {
 
     const alice = detail.employees.find((e: { employeeId: string }) => e.employeeId === employee.id);
     expect(alice).toBeDefined();
-    expect(alice.payableHours).toBe(19);
+    expect(alice.payableHours).toBe(19.5);
     expect(alice.adjustmentHours).toBe(0);
-    expect(alice.totalPayableHours).toBe(19);
+    expect(alice.totalPayableHours).toBe(19.5);
 
     function countKind(kind: string) {
       return alice.exceptions.filter((e: { kind: string }) => e.kind === kind).length;
@@ -182,6 +184,126 @@ describe('payroll period review detail: payable hours + exceptions', () => {
 
     expect((await a.get('/api/payroll/periods/does-not-exist')).status).toBe(404);
     expect((await b.get(`/api/payroll/periods/${period.id}`)).status).toBe(404);
+  });
+});
+
+describe('ice-session prep pay (+30 min when the day\'s first shift is an Ice Session)', () => {
+  async function dayPayableHours(agent: Awaited<ReturnType<typeof signupAdmin>>['agent'], employeeId: string, periodId: string) {
+    const detail = (await agent.get(`/api/payroll/periods/${periodId}`)).body;
+    return detail.employees.find((e: { employeeId: string }) => e.employeeId === employeeId)?.payableHours ?? 0;
+  }
+
+  it('adds 30 min when the first shift of the day is an Ice Session', async () => {
+    const { agent } = await signupAdmin(app, { workspaceCode: 'ICEPREP1' });
+    const subRow = await makeStaffSubRow(agent);
+    const employee = (await agent.post('/api/employees').send({ name: 'Ice Emp', pin: '1234' })).body;
+    await createAssignedShift(agent, {
+      subRowId: subRow.id,
+      date: '2026-09-01',
+      startTime: '09:00',
+      endTime: '10:00',
+      employeeId: employee.id,
+      sessionType: 'Ice Session',
+    });
+    const period = (await agent.post('/api/payroll/periods').send({ start: '2026-09-01', end: '2026-09-01' })).body;
+
+    expect(await dayPayableHours(agent, employee.id, period.id)).toBe(1.5); // 1h shift + 0.5h prep
+  });
+
+  it('does not add the bonus when an Ice Session exists that day but is not the first shift', async () => {
+    const { agent } = await signupAdmin(app, { workspaceCode: 'ICEPREP2' });
+    const subRow = await makeStaffSubRow(agent);
+    const employee = (await agent.post('/api/employees').send({ name: 'Ice Emp 2', pin: '1235' })).body;
+    await createAssignedShift(agent, {
+      subRowId: subRow.id,
+      date: '2026-09-01',
+      startTime: '07:00',
+      endTime: '08:00',
+      employeeId: employee.id,
+      sessionType: 'Workout',
+    });
+    await createAssignedShift(agent, {
+      subRowId: subRow.id,
+      date: '2026-09-01',
+      startTime: '09:00',
+      endTime: '10:00',
+      employeeId: employee.id,
+      sessionType: 'Ice Session',
+    });
+    const period = (await agent.post('/api/payroll/periods').send({ start: '2026-09-01', end: '2026-09-01' })).body;
+
+    expect(await dayPayableHours(agent, employee.id, period.id)).toBe(2); // 1h + 1h, no bonus — Ice Session wasn't first
+  });
+
+  it('does not add the bonus on a day with no Ice Session at all', async () => {
+    const { agent } = await signupAdmin(app, { workspaceCode: 'ICEPREP3' });
+    const subRow = await makeStaffSubRow(agent);
+    const employee = (await agent.post('/api/employees').send({ name: 'Ice Emp 3', pin: '1236' })).body;
+    await createAssignedShift(agent, {
+      subRowId: subRow.id,
+      date: '2026-09-01',
+      startTime: '09:00',
+      endTime: '10:00',
+      employeeId: employee.id,
+      sessionType: 'Workout',
+    });
+    const period = (await agent.post('/api/payroll/periods').send({ start: '2026-09-01', end: '2026-09-01' })).body;
+
+    expect(await dayPayableHours(agent, employee.id, period.id)).toBe(1);
+  });
+
+  it('ignores a cancelled Ice Session when determining the first shift of the day', async () => {
+    const { agent } = await signupAdmin(app, { workspaceCode: 'ICEPREP4' });
+    const subRow = await makeStaffSubRow(agent);
+    const employee = (await agent.post('/api/employees').send({ name: 'Ice Emp 4', pin: '1237' })).body;
+    await createAssignedShift(agent, {
+      subRowId: subRow.id,
+      date: '2026-09-01',
+      startTime: '07:00',
+      endTime: '08:00',
+      employeeId: employee.id,
+      sessionType: 'Ice Session',
+      cancelled: true,
+    });
+    await createAssignedShift(agent, {
+      subRowId: subRow.id,
+      date: '2026-09-01',
+      startTime: '09:00',
+      endTime: '10:00',
+      employeeId: employee.id,
+      sessionType: 'Workout',
+    });
+    const period = (await agent.post('/api/payroll/periods').send({ start: '2026-09-01', end: '2026-09-01' })).body;
+
+    // The cancelled Ice Session is excluded, so the Workout is the real first
+    // (and only) active shift of the day -> no bonus.
+    expect(await dayPayableHours(agent, employee.id, period.id)).toBe(1);
+  });
+
+  it('applies the bonus once per day even with multiple Ice Session shifts that day', async () => {
+    const { agent } = await signupAdmin(app, { workspaceCode: 'ICEPREP5' });
+    const subRow = await makeStaffSubRow(agent);
+    const employee = (await agent.post('/api/employees').send({ name: 'Ice Emp 5', pin: '1238' })).body;
+    await createAssignedShift(agent, {
+      subRowId: subRow.id,
+      date: '2026-09-01',
+      startTime: '09:00',
+      endTime: '10:00',
+      employeeId: employee.id,
+      sessionType: 'Ice Session',
+    });
+    await createAssignedShift(agent, {
+      subRowId: subRow.id,
+      date: '2026-09-01',
+      startTime: '11:00',
+      endTime: '12:00',
+      employeeId: employee.id,
+      sessionType: 'Ice Session',
+    });
+    const period = (await agent.post('/api/payroll/periods').send({ start: '2026-09-01', end: '2026-09-01' })).body;
+
+    // 1h + 1h shifts + 1h unpaid downtime gap (>30min, not paid) + 0.5h prep bonus once
+    expect(await dayPayableHours(agent, employee.id, period.id)).toBe(2.5);
   });
 });
 
@@ -253,7 +375,11 @@ describe('payroll lock enforcement on shift routes', () => {
     await agent.post(`/api/payroll/periods/${period.id}/review`);
     await agent.post(`/api/payroll/periods/${period.id}/approve`);
 
-    const directorAgent = await seedAdminWithRole(app, workspace.id, 'director@pay14.example', 'DIRECTOR');
+    // Campus-scoped like any DIRECTOR (see campusIsolation.test.ts) — assigned
+    // to the workspace's own default Campus so these tests exercise the
+    // payroll lock, not campus scoping which would 404 them earlier.
+    const defaultCampus = await getDefaultCampus(workspace.id);
+    const directorAgent = await seedAdminWithRole(app, workspace.id, 'director@pay14.example', 'DIRECTOR', { campusId: defaultCampus.id });
     return { adminAgent: agent, directorAgent, subRow, shift, cellValueId };
   }
 
@@ -362,7 +488,8 @@ describe('reopening an approved period', () => {
 
   it('releases the shift lock — a DIRECTOR-role admin can edit again after reopen', async () => {
     const { agent, workspace, period, shift } = await setupApprovedPeriod('REOPEN6');
-    const directorAgent = await seedAdminWithRole(app, workspace.id, 'director@reopen6.example', 'DIRECTOR');
+    const defaultCampus = await getDefaultCampus(workspace.id);
+    const directorAgent = await seedAdminWithRole(app, workspace.id, 'director@reopen6.example', 'DIRECTOR', { campusId: defaultCampus.id });
 
     expect((await directorAgent.patch(`/api/shifts/${shift.id}`).send({ startTime: '10:00' })).status).toBe(409);
 
@@ -490,8 +617,10 @@ describe('CSV export for an APPROVED period', () => {
     expect(cols[0]).toBe('Alice Chen');
     expect(cols[1]).toBe('2026-09-01');
     expect(cols[2]).toBe('2026-09-02');
-    // 4h Workout + 1h Skill Session + 0.25h paid break + 2h Ice Session + 0.5h adjustment; cancelled shift excluded
-    expect(cols[3]).toBe('7.75');
+    // 4h Workout + 1h Skill Session + 0.25h paid break, + 2h Ice Session (day's
+    // only shift, so it's first -> +0.5h ice prep bonus), + 0.5h adjustment;
+    // cancelled shift excluded
+    expect(cols[3]).toBe('8.25');
     expect(cols[4]).toBe('0.25'); // Paid Break Hours
     expect(cols[5]).toBe('2'); // Ice Session
     expect(cols[6]).toBe('1'); // Skill Session

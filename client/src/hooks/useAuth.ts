@@ -3,7 +3,15 @@ import { api, ApiError } from '../lib/api';
 
 export interface MeResponse {
   actorType: 'admin' | 'employee';
-  admin?: { id: string; email: string; role: string } | null;
+  admin?: {
+    id: string;
+    email: string;
+    role: string;
+    campusId: string | null;
+    // Lets a restricted Director/SLI render their fixed campus label
+    // straight from /me — see components/CampusSelector.tsx.
+    campus: { id: string; name: string } | null;
+  } | null;
   employee?: { id: string; name: string; role: string } | null;
   workspace: { id: string; name: string; workspaceCode?: string; onboardingStep?: number };
 }

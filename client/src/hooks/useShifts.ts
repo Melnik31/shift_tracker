@@ -2,10 +2,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { BulkShiftRequest, BulkShiftResponse, Shift } from '../lib/types';
 
-export function useShifts(date: string) {
+// campusId narrows the view to one Campus (the Campus selector) — has no
+// effect for a restricted Director/SLI, whose own session scope always wins
+// server-side. useShiftMutations' invalidate({queryKey: ['shifts', date]})
+// still matches every campusId variant of this key (React Query's default
+// partial-match invalidation), so it doesn't need to know about campusId.
+export function useShifts(date: string, campusId?: string | null) {
   return useQuery<{ shifts: Shift[] }>({
-    queryKey: ['shifts', date],
-    queryFn: () => api.get(`/shifts?date=${date}`),
+    queryKey: ['shifts', date, campusId ?? null],
+    queryFn: () => api.get(`/shifts?date=${date}${campusId ? `&campusId=${campusId}` : ''}`),
   });
 }
 

@@ -1,12 +1,16 @@
 import { Fragment, useMemo, useState } from 'react';
 import { useLayout } from '../hooks/useLayout';
 import { useShifts, useShiftMutations } from '../hooks/useShifts';
-import { useEmployees } from '../hooks/useEmployees';
+import { useAuth } from '../hooks/useAuth';
 import { toMinutes, formatTime12h } from '../lib/time';
 import { OPERATIONAL_START, OPERATIONAL_END, SESSION_TYPE_COLORS } from '../lib/constants';
-import { CellValue, Shift, SubRow } from '../lib/types';
+import { Shift, SubRow } from '../lib/types';
 import CellBlock from '../components/CellBlock';
-import CellPopover from '../components/CellPopover';
+import CampusSelector from '../components/CampusSelector';
+import { useCampuses } from '../hooks/useCampuses';
+import EditShiftBlockModal from '../components/EditShiftBlockModal';
+import ManageAdminsModal from '../components/ManageAdminsModal';
+import ManageCampusesModal from '../components/ManageCampusesModal';
 import ManageLayoutModal from '../components/ManageLayoutModal';
 import ManageTeamModal from '../components/ManageTeamModal';
 import NewShiftBlockModal from '../components/NewShiftBlockModal';
@@ -31,30 +35,29 @@ type FlatRow =
   | { kind: 'subrow'; id: string; label: string; dataType: SubRow['dataType']; subRow: SubRow };
 
 export default function MatrixView() {
-  const { data: layout } = useLayout();
-  const { data: employeesData } = useEmployees();
+  const { data: me } = useAuth();
+  const [campusId, setCampusId] = useState<string | null>(null);
+  const { data: layout } = useLayout(campusId);
   const [date, setDate] = useState(todayStr());
-  const { data: shiftsData } = useShifts(date);
-  const { addShift, deleteShift, invalidate } = useShiftMutations(date);
+  const { data: shiftsData } = useShifts(date, campusId);
+  const { addShift, invalidate } = useShiftMutations(date);
 
   const [search, setSearch] = useState('');
   const [zoom, setZoom] = useState(1);
   const [showManageLayout, setShowManageLayout] = useState(false);
   const [showManageTeam, setShowManageTeam] = useState(false);
+  const [showManageAdmins, setShowManageAdmins] = useState(false);
+  const [showManageCampuses, setShowManageCampuses] = useState(false);
   const [showNewShiftBlock, setShowNewShiftBlock] = useState(false);
-  const [openPopover, setOpenPopover] = useState<{
-    shift: Shift;
-    cellValue: CellValue;
-    subRow: SubRow;
-    anchor: { x: number; y: number };
-  } | null>(null);
+  const [editingBlock, setEditingBlock] = useState<{ shift: Shift; subRow: SubRow } | null>(null);
+  const canManageAdmins = me?.admin?.role === 'ADMIN' || me?.admin?.role === 'CEO';
+  const { data: campusData } = useCampuses();
+  const selectedCampusName = campusId ? campusData?.campuses.find((c) => c.id === campusId)?.name : null;
 
   const pxPerMin = BASE_PX_PER_MIN * zoom;
   const windowStart = toMinutes(OPERATIONAL_START);
   const windowEnd = toMinutes(OPERATIONAL_END);
   const totalWidth = (windowEnd - windowStart) * pxPerMin;
-
-  const employees = employeesData?.employees ?? [];
 
   const rows: FlatRow[] = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -96,22 +99,8 @@ export default function MatrixView() {
     return row.dataType === 'STAFF' || row.dataType === 'TEXT' ? MULTILINE_ROW_HEIGHT : ROW_HEIGHT;
   }
 
-  function openCellEditor(shift: Shift, subRow: SubRow, e: React.MouseEvent) {
-    const cellValue = shift.cellValues[0];
-    if (!cellValue) return;
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const POPOVER_WIDTH = 288;
-    const POPOVER_HEIGHT = 320;
-    const PADDING = 8;
-    // Anchor x to the click point, not the shift block's own bounding rect
-    // — a wide block (long shift, or zoomed in) scrolled so its left edge
-    // sits off-screen would otherwise place the popover off-screen too,
-    // even though the clicked point itself is always on-screen.
-    let x = Math.max(PADDING, Math.min(e.clientX, window.innerWidth - POPOVER_WIDTH - PADDING));
-    let y = rect.bottom + 6;
-    if (y + POPOVER_HEIGHT > window.innerHeight) y = rect.top - POPOVER_HEIGHT - 6;
-    y = Math.max(PADDING, y);
-    setOpenPopover({ shift, cellValue, subRow, anchor: { x, y } });
+  function openCellEditor(shift: Shift, subRow: SubRow) {
+    setEditingBlock({ shift, subRow });
   }
 
   async function handleAddShift(subRowId: string) {
@@ -126,8 +115,10 @@ export default function MatrixView() {
         searchPlaceholder="Search sections, locations, sub-rows..."
         date={date}
         onDateChange={setDate}
+        showAddShiftButton={false}
         rightExtra={
           <>
+            <CampusSelector value={campusId} onChange={setCampusId} />
             <div className="flex items-center border border-slate-300 rounded-md">
               <button onClick={() => setZoom((z) => Math.max(0.5, z / 1.25))} className="px-2 py-1.5 text-sm hover:bg-slate-50">
                 −
@@ -137,7 +128,10 @@ export default function MatrixView() {
                 +
               </button>
             </div>
-            <button onClick={() => setShowNewShiftBlock(true)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
+            <button
+              onClick={() => setShowNewShiftBlock(true)}
+              className="rounded-md bg-slate-900 text-white px-3 py-1.5 text-sm font-medium hover:bg-slate-700"
+            >
               + New Shift Block
             </button>
             <button onClick={() => setShowManageLayout(true)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
@@ -146,6 +140,16 @@ export default function MatrixView() {
             <button onClick={() => setShowManageTeam(true)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
               Manage Team
             </button>
+            {canManageAdmins && (
+              <>
+                <button onClick={() => setShowManageAdmins(true)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
+                  Manage Admins
+                </button>
+                <button onClick={() => setShowManageCampuses(true)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
+                  Manage Campuses
+                </button>
+              </>
+            )}
           </>
         }
       />
@@ -216,7 +220,7 @@ export default function MatrixView() {
                     return (
                       <button
                         key={shift.id}
-                        onClick={(e) => openCellEditor(shift, row.subRow, e)}
+                        onClick={() => openCellEditor(shift, row.subRow)}
                         title={
                           shift.sessionType
                             ? `${shift.sessionType} — ${formatTime12h(shift.startTime)} – ${formatTime12h(shift.endTime)}`
@@ -242,23 +246,41 @@ export default function MatrixView() {
             </Fragment>
           ))}
         </div>
+
+        {layout && rows.length === 0 && (
+          <div className="max-w-md mx-auto text-center py-16 px-4">
+            <p className="text-sm text-slate-500">
+              {search.trim()
+                ? 'No sections, locations, or rows match your search.'
+                : selectedCampusName
+                ? `No sections yet in ${selectedCampusName}.`
+                : 'No sections yet.'}
+            </p>
+            {!search.trim() && (
+              <p className="text-xs text-slate-400 mt-1">
+                Use <span className="font-medium">Manage Layout</span> to add one
+                {selectedCampusName ? ` — it'll default to ${selectedCampusName} while that campus is selected` : ''}.
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
-      {openPopover && (
-        <CellPopover
-          shift={openPopover.shift}
-          cellValue={openPopover.cellValue}
-          subRow={openPopover.subRow}
-          employees={employees}
-          anchor={openPopover.anchor}
-          onClose={() => setOpenPopover(null)}
+      {editingBlock && (
+        <EditShiftBlockModal
+          key={editingBlock.shift.id}
+          shift={editingBlock.shift}
+          subRow={editingBlock.subRow}
+          date={date}
+          onClose={() => setEditingBlock(null)}
           onSaved={invalidate}
-          onDeleteShift={() => deleteShift.mutate(openPopover.shift.id)}
         />
       )}
 
-      {showManageLayout && <ManageLayoutModal onClose={() => setShowManageLayout(false)} />}
+      {showManageLayout && <ManageLayoutModal campusId={campusId} onClose={() => setShowManageLayout(false)} />}
       {showManageTeam && <ManageTeamModal onClose={() => setShowManageTeam(false)} />}
+      {showManageAdmins && <ManageAdminsModal onClose={() => setShowManageAdmins(false)} />}
+      {showManageCampuses && <ManageCampusesModal onClose={() => setShowManageCampuses(false)} />}
       {showNewShiftBlock && <NewShiftBlockModal date={date} onClose={() => setShowNewShiftBlock(false)} />}
     </div>
   );

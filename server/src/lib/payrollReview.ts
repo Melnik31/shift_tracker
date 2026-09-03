@@ -55,6 +55,12 @@ function toMinutes(hhmm: string): number {
 
 export const NO_SESSION_TYPE_LABEL = 'No Session Type';
 
+// Ice rink prep time: an employee is paid for 30 min immediately before their
+// first shift of the day, but only when that first shift is an Ice Session —
+// not just any day that happens to include one later on.
+const ICE_SESSION_TYPE = 'Ice Session';
+const ICE_SESSION_PREP_HOURS = 0.5;
+
 function computeEmployeePayroll(
   shifts: ShiftRow[]
 ): { payableHours: number; paidBreakHours: number; exceptions: PayrollException[]; sessionTypeHours: Record<string, number> } {
@@ -103,13 +109,17 @@ function computeEmployeePayroll(
     }
 
     const breakdown = computeDailyBreakdown(dayShifts);
-    payableHours += breakdown.billableHours;
+    let dayBillableHours = breakdown.billableHours;
+    if (sorted[0].sessionType === ICE_SESSION_TYPE) {
+      dayBillableHours = round2(dayBillableHours + ICE_SESSION_PREP_HOURS);
+    }
+    payableHours += dayBillableHours;
     paidBreakHours += breakdown.paidBreakHours;
 
-    if (breakdown.billableHours > HIGH_HOURS_THRESHOLD) {
-      exceptions.push({ kind: 'HIGH_HOURS', date, detail: `${breakdown.billableHours}h on ${date} is above the ${HIGH_HOURS_THRESHOLD}h/day threshold` });
-    } else if (breakdown.billableHours < LOW_HOURS_THRESHOLD) {
-      exceptions.push({ kind: 'LOW_HOURS', date, detail: `${breakdown.billableHours}h on ${date} is below the ${LOW_HOURS_THRESHOLD}h/day threshold` });
+    if (dayBillableHours > HIGH_HOURS_THRESHOLD) {
+      exceptions.push({ kind: 'HIGH_HOURS', date, detail: `${dayBillableHours}h on ${date} is above the ${HIGH_HOURS_THRESHOLD}h/day threshold` });
+    } else if (dayBillableHours < LOW_HOURS_THRESHOLD) {
+      exceptions.push({ kind: 'LOW_HOURS', date, detail: `${dayBillableHours}h on ${date} is below the ${LOW_HOURS_THRESHOLD}h/day threshold` });
     }
   }
 

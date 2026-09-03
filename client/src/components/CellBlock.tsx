@@ -88,8 +88,7 @@ function EmptyHint() {
 // Renders the roster for a STAFF cell. Up to 3 names show inline; beyond
 // that, hovering the "+N more" line reveals every assigned name in a
 // fixed-position tooltip so it isn't clipped by the shift button's
-// `overflow-hidden` (fixed positioning escapes ancestor clipping, the same
-// trick CellPopover uses for its edit popover).
+// `overflow-hidden` (fixed positioning escapes ancestor clipping).
 function StaffCell({ cellValue }: { cellValue: CellValue }) {
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
 

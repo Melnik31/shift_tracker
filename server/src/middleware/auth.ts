@@ -8,6 +8,7 @@ declare module 'express-session' {
     workspaceId?: string;
     actorId?: string; // adminUserId or employeeId depending on actorType
     role?: Role; // set once at login from the DB record (admin) or implicitly (employee -> COACH); never from client input
+    campusId?: string | null; // set once at login from AdminUser.campusId; null = unrestricted. See lib/campusScope.ts.
   }
 }
 

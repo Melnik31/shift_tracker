@@ -7,11 +7,14 @@ import { prisma } from '../db';
 import { requireRole } from '../middleware/auth';
 import { STATUS_VALUES, SESSION_TYPES } from '../types';
 import { rejectIfLocked } from '../lib/payrollLock';
+import { campusScopeFor, NO_CAMPUS_ASSIGNED } from '../lib/campusScope';
+import { subRowInScope, shiftInScope, cellValueInScope, fileUploadInScope } from '../lib/ownership';
 
 const router = Router();
-// TODO(campus-scoping): once Campus scoping exists, DIRECTOR access here
-// should narrow to their own campus only, rather than the whole workspace.
-router.use(requireRole('DIRECTOR', 'ADMIN', 'CEO'));
+// Campus scoping is enforced per-handler below via campusScopeFor/the
+// lib/ownership.ts helpers: ADMIN/CEO see every Campus in the workspace,
+// DIRECTOR/SENIOR_LEAD_INSTRUCTOR only their assigned Campus.
+router.use(requireRole('DIRECTOR', 'SENIOR_LEAD_INSTRUCTOR', 'ADMIN', 'CEO'));
 
 const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -23,10 +26,6 @@ const upload = multer({
   }),
   limits: { fileSize: 10 * 1024 * 1024 },
 });
-
-async function subRowInWorkspace(subRowId: string, workspaceId: string) {
-  return prisma.subRow.findFirst({ where: { id: subRowId, location: { section: { workspaceId } } } });
-}
 
 function isValidSessionType(sessionType: unknown): sessionType is string {
   return (SESSION_TYPES as readonly string[]).includes(sessionType as string);
@@ -58,14 +57,20 @@ function cellValueInclude() {
   } as const;
 }
 
-// GET /api/shifts?date=YYYY-MM-DD — all shift blocks for the caller's workspace on that date.
+// GET /api/shifts?date=YYYY-MM-DD — all shift blocks for the caller's
+// workspace on that date, narrowed to their Campus when restricted.
 router.get('/', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
+  const scope = campusScopeFor(req);
   const date = String(req.query.date ?? '');
   if (!date) return res.status(400).json({ error: 'date query param (YYYY-MM-DD) is required' });
 
   const shifts = await prisma.shift.findMany({
-    where: { workspaceId, date },
+    where: {
+      workspaceId,
+      date,
+      ...(scope.restricted ? { subRow: { location: { section: { campusId: scope.campusId ?? NO_CAMPUS_ASSIGNED } } } } : {}),
+    },
     include: { cellValues: { include: cellValueInclude() } },
     orderBy: { startTime: 'asc' },
   });
@@ -75,8 +80,9 @@ router.get('/', async (req, res) => {
 // POST /api/shifts — creates a new shift block + an empty cell value for a sub-row.
 router.post('/', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
+  const scope = campusScopeFor(req);
   const { subRowId, date, startTime, endTime, sessionType } = req.body ?? {};
-  const subRow = await subRowInWorkspace(subRowId, workspaceId);
+  const subRow = await subRowInScope(subRowId, workspaceId, scope);
   if (!subRow) return res.status(404).json({ error: 'SubRow not found' });
   if (!date || !startTime || !endTime) return res.status(400).json({ error: 'date, startTime, endTime are required' });
   if (sessionType !== undefined && sessionType !== null && !isValidSessionType(sessionType)) {
@@ -101,6 +107,7 @@ router.post('/', async (req, res) => {
 // on that SubRow — reported back per row rather than failing the request.
 router.post('/bulk', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
+  const scope = campusScopeFor(req);
   const { date, startTime, endTime, sessionType, rows } = req.body ?? {};
   if (!date || !startTime || !endTime) return res.status(400).json({ error: 'date, startTime, endTime are required' });
   if (sessionType !== undefined && sessionType !== null && !isValidSessionType(sessionType)) {
@@ -119,7 +126,7 @@ router.post('/bulk', async (req, res) => {
       continue;
     }
 
-    const subRow = await subRowInWorkspace(subRowId, workspaceId);
+    const subRow = await subRowInScope(subRowId, workspaceId, scope);
     if (!subRow) {
       skipped.push({ subRowId, reason: 'SubRow not found' });
       continue;
@@ -174,7 +181,8 @@ router.post('/bulk', async (req, res) => {
 
 router.patch('/:id', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
-  const existing = await prisma.shift.findFirst({ where: { id: req.params.id, workspaceId } });
+  const scope = campusScopeFor(req);
+  const existing = await shiftInScope(req.params.id, workspaceId, scope);
   if (!existing) return res.status(404).json({ error: 'Shift not found' });
 
   const { startTime, endTime, sessionType, cancelled } = req.body ?? {};
@@ -197,7 +205,8 @@ router.patch('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
-  const existing = await prisma.shift.findFirst({ where: { id: req.params.id, workspaceId } });
+  const scope = campusScopeFor(req);
+  const existing = await shiftInScope(req.params.id, workspaceId, scope);
   if (!existing) return res.status(404).json({ error: 'Shift not found' });
   if (await rejectIfLocked(req, res, workspaceId, existing.date)) return;
 
@@ -213,16 +222,10 @@ router.delete('/:id', async (req, res) => {
 
 // ── Cell values ────────────────────────────────────────────────────────
 
-async function cellValueInWorkspace(cellValueId: string, workspaceId: string) {
-  return prisma.cellValue.findFirst({
-    where: { id: cellValueId, shift: { workspaceId } },
-    include: { subRow: true, shift: true },
-  });
-}
-
 router.patch('/cells/:id', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
-  const existing = await cellValueInWorkspace(req.params.id, workspaceId);
+  const scope = campusScopeFor(req);
+  const existing = await cellValueInScope(req.params.id, workspaceId, scope);
   if (!existing) return res.status(404).json({ error: 'Cell not found' });
   if (await rejectIfLocked(req, res, workspaceId, existing.shift.date)) return;
 
@@ -264,7 +267,8 @@ router.patch('/cells/:id', async (req, res) => {
 
 router.post('/cells/:id/files', upload.single('file'), async (req, res) => {
   const workspaceId = req.session.workspaceId!;
-  const existing = await cellValueInWorkspace(req.params.id, workspaceId);
+  const scope = campusScopeFor(req);
+  const existing = await cellValueInScope(req.params.id, workspaceId, scope);
   if (!existing) return res.status(404).json({ error: 'Cell not found' });
   if (!req.file) return res.status(400).json({ error: 'file is required' });
   // multer already wrote the file to disk before this handler runs — clean it
@@ -286,10 +290,8 @@ router.post('/cells/:id/files', upload.single('file'), async (req, res) => {
 
 router.delete('/files/:id', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
-  const file = await prisma.fileUpload.findFirst({
-    where: { id: req.params.id, cellValue: { shift: { workspaceId } } },
-    include: { cellValue: { include: { shift: true } } },
-  });
+  const scope = campusScopeFor(req);
+  const file = await fileUploadInScope(req.params.id, workspaceId, scope);
   if (!file) return res.status(404).json({ error: 'File not found' });
   if (await rejectIfLocked(req, res, workspaceId, file.cellValue.shift.date)) return;
 

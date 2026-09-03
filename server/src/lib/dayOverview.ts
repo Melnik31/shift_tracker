@@ -6,6 +6,7 @@ export interface OverviewShift {
   date: string;
   startTime: string;
   endTime: string;
+  sessionType: string | null;
   sectionId: string;
   sectionName: string;
   locationName: string;
@@ -81,15 +82,34 @@ function sumBreakdowns(days: OverviewDay[]) {
  * (never reimplements the gap math), then sums those already-rounded
  * per-day results across the range and across employees.
  */
-export async function getWorkspaceRangeOverview(workspaceId: string, start: string, end: string): Promise<RangeOverview> {
+export async function getWorkspaceRangeOverview(
+  workspaceId: string,
+  start: string,
+  end: string,
+  campusId?: string | null
+): Promise<RangeOverview> {
   const sections = await prisma.section.findMany({
-    where: { workspaceId },
+    where: { workspaceId, ...(campusId ? { campusId } : {}) },
     orderBy: { sortOrder: 'asc' },
     select: { id: true, name: true, sortOrder: true },
   });
 
+  // Filtering to one Campus here, same as shifts.ts's GET /, means an
+  // employee who worked at more than one Campus the same day gets a
+  // break/gap computation based on only the visible subset of their shifts
+  // for that day — an inherent consequence of per-campus scoping, not a new
+  // inconsistency introduced here.
   const assignments = await prisma.cellStaffAssignment.findMany({
-    where: { employee: { workspaceId }, cellValue: { shift: { workspaceId, date: { gte: start, lte: end } } } },
+    where: {
+      employee: { workspaceId },
+      cellValue: {
+        shift: {
+          workspaceId,
+          date: { gte: start, lte: end },
+          ...(campusId ? { subRow: { location: { section: { campusId } } } } : {}),
+        },
+      },
+    },
     include: {
       employee: true,
       cellValue: {
@@ -118,6 +138,7 @@ export async function getWorkspaceRangeOverview(workspaceId: string, start: stri
       date: shift.date,
       startTime: shift.startTime,
       endTime: shift.endTime,
+      sessionType: shift.sessionType,
       sectionId: section.id,
       sectionName: section.name,
       locationName: location.name,

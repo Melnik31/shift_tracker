@@ -2,10 +2,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { Section, DataType } from '../lib/types';
 
-export function useLayout() {
+// campusId narrows the view to one Campus (the Campus selector) — has no
+// effect for a restricted Director/SLI, whose own session scope always wins
+// server-side. useLayoutMutations' invalidate({queryKey: ['layout']}) still
+// matches every campusId variant of this key (React Query's default
+// partial-match invalidation), so it doesn't need to know about campusId.
+export function useLayout(campusId?: string | null) {
   return useQuery<{ sections: Section[] }>({
-    queryKey: ['layout'],
-    queryFn: () => api.get('/layout'),
+    queryKey: ['layout', campusId ?? null],
+    queryFn: () => api.get(`/layout${campusId ? `?campusId=${campusId}` : ''}`),
   });
 }
 
@@ -14,12 +19,12 @@ export function useLayoutMutations() {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['layout'] });
 
   const addSection = useMutation({
-    mutationFn: (name: string) => api.post('/layout/sections', { name }),
+    mutationFn: (vars: { name: string; campusId?: string }) => api.post('/layout/sections', vars),
     onSuccess: invalidate,
   });
 
   const updateSection = useMutation({
-    mutationFn: (vars: { id: string; name: string }) => api.patch(`/layout/sections/${vars.id}`, { name: vars.name }),
+    mutationFn: (vars: { id: string; name?: string; campusId?: string }) => api.patch(`/layout/sections/${vars.id}`, vars),
     onSuccess: invalidate,
   });
 

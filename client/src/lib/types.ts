@@ -15,6 +15,13 @@ export type PayrollPeriodStatus = (typeof PAYROLL_PERIOD_STATUSES)[number];
 export const EXCEPTION_KINDS = ['MISSING_SESSION_TYPE', 'OVERLAPPING_SHIFTS', 'CANCELLED_SESSION', 'HIGH_HOURS', 'LOW_HOURS'] as const;
 export type ExceptionKind = (typeof EXCEPTION_KINDS)[number];
 
+// AdminUser.role, mirrors server/src/types.ts. COACH is excluded from
+// ASSIGNABLE_ADMIN_ROLES — it's the implicit Employee/PIN-login role, never
+// assigned to an AdminUser through Manage Admins.
+export const ASSIGNABLE_ADMIN_ROLES = ['DIRECTOR', 'SENIOR_LEAD_INSTRUCTOR', 'ADMIN', 'CEO'] as const;
+export type AssignableAdminRole = (typeof ASSIGNABLE_ADMIN_ROLES)[number];
+export const CAMPUS_SCOPED_ROLES = ['DIRECTOR', 'SENIOR_LEAD_INSTRUCTOR'] as const;
+
 export interface SubRow {
   id: string;
   locationId: string;
@@ -35,9 +42,29 @@ export interface Location {
 export interface Section {
   id: string;
   workspaceId: string;
+  campusId: string;
   name: string;
   sortOrder: number;
   locations: Location[];
+}
+
+export interface Campus {
+  id: string;
+  name: string;
+  sortOrder: number;
+  isDefault: boolean;
+  active: boolean;
+  sectionCount: number;
+  adminCount: number;
+}
+
+export interface AdminUserAccount {
+  id: string;
+  email: string;
+  role: AssignableAdminRole;
+  active: boolean;
+  campus: { id: string; name: string } | null;
+  createdAt: string;
 }
 
 export interface Employee {
@@ -154,6 +181,7 @@ export interface OverviewShift {
   date: string;
   startTime: string;
   endTime: string;
+  sessionType: string | null;
   sectionId: string;
   sectionName: string;
   locationName: string;
@@ -215,9 +243,11 @@ export interface PayrollEmployeeSummary {
   employeeId: string;
   employeeName: string;
   payableHours: number;
+  paidBreakHours: number;
   adjustmentHours: number;
   totalPayableHours: number;
   exceptions: PayrollException[];
+  sessionTypeHours: Record<string, number>;
 }
 
 export interface PayrollPeriodDetail {

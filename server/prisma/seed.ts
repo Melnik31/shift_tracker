@@ -52,8 +52,12 @@ async function createEmployees(workspaceId: string, names: { name: string; role:
   return created;
 }
 
-async function createSection(workspaceId: string, name: string, sortOrder: number) {
-  return prisma.section.create({ data: { workspaceId, name, sortOrder } });
+async function createDefaultCampus(workspaceId: string) {
+  return prisma.campus.create({ data: { workspaceId, name: 'Main Campus', sortOrder: 0, isDefault: true } });
+}
+
+async function createSection(workspaceId: string, campusId: string, name: string, sortOrder: number) {
+  return prisma.section.create({ data: { workspaceId, campusId, name, sortOrder } });
 }
 
 async function createLocation(sectionId: string, name: string, sortOrder: number) {
@@ -108,6 +112,7 @@ async function attachFile(cellValueId: string, filename: string, contents: strin
 
 async function seedSentry() {
   const ws = await createWorkspace('Sentry Guard Services', 'SENTRY1');
+  const campus = await createDefaultCampus(ws.id);
   const admin = await createAdmin(ws.id, 'admin@sentryguard.example');
 
   const employees = await createEmployees(ws.id, [
@@ -119,8 +124,8 @@ async function seedSentry() {
     { name: 'Taylor Brooks', role: 'Supervisor', pin: '6060' },
   ]);
 
-  const perimeter = await createSection(ws.id, 'Perimeter', 0);
-  const interior = await createSection(ws.id, 'Building Interior', 1);
+  const perimeter = await createSection(ws.id, campus.id, 'Perimeter', 0);
+  const interior = await createSection(ws.id, campus.id, 'Building Interior', 1);
 
   const gate1 = await createLocation(perimeter.id, 'Gate 1', 0);
   const gate2 = await createLocation(perimeter.id, 'Gate 2', 1);
@@ -209,6 +214,7 @@ async function seedSentry() {
 
 async function seedSkyline() {
   const ws = await createWorkspace('Skyline Events Co.', 'SKYLINE1');
+  const campus = await createDefaultCampus(ws.id);
   const admin = await createAdmin(ws.id, 'admin@skylineevents.example');
 
   const employees = await createEmployees(ws.id, [
@@ -220,8 +226,8 @@ async function seedSkyline() {
     { name: 'Harper Nguyen', role: 'Stage Manager', pin: '6666' },
   ]);
 
-  const stages = await createSection(ws.id, 'Stages', 0);
-  const vendorRow = await createSection(ws.id, 'Vendor Row', 1);
+  const stages = await createSection(ws.id, campus.id, 'Stages', 0);
+  const vendorRow = await createSection(ws.id, campus.id, 'Vendor Row', 1);
 
   const mainStage = await createLocation(stages.id, 'Main Stage', 0);
   const stageB = await createLocation(stages.id, 'Stage B', 1);
@@ -340,6 +346,7 @@ interface StrengthSession {
 
 async function seedMapHockey() {
   const ws = await createWorkspace('MAP Hockey', 'MAPHKY');
+  const campus = await createDefaultCampus(ws.id);
   const admin = await createAdmin(ws.id, 'admin@maphockey.example');
 
   const roster = [
@@ -373,10 +380,10 @@ async function seedMapHockey() {
     roster.map((name, i) => ({ name, role: 'Coach', pin: String(7001 + i) }))
   );
 
-  const ice = await createSection(ws.id, 'ICE', 0);
-  const workouts = await createSection(ws.id, 'WORKOUTS', 1);
-  const skills = await createSection(ws.id, 'SKILLS', 2);
-  const general = await createSection(ws.id, 'General', 3);
+  const ice = await createSection(ws.id, campus.id, 'ICE', 0);
+  const workouts = await createSection(ws.id, campus.id, 'WORKOUTS', 1);
+  const skills = await createSection(ws.id, campus.id, 'SKILLS', 2);
+  const general = await createSection(ws.id, campus.id, 'General', 3);
 
   // ── ICE: Rink A, B, C — each with the same 5 sub-rows in the same order ──
   const rinkA = await createLocation(ice.id, 'Rink A', 0);
@@ -599,6 +606,7 @@ async function main() {
   await prisma.payrollPeriod.deleteMany();
   await prisma.employee.deleteMany();
   await prisma.adminUser.deleteMany();
+  await prisma.campus.deleteMany();
   await prisma.workspace.deleteMany();
 
   console.log('Seeding Sentry Guard Services (SENTRY1)...');

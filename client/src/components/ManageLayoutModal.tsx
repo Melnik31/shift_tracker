@@ -1,24 +1,69 @@
 import { useState } from 'react';
 import { useLayout, useLayoutMutations } from '../hooks/useLayout';
+import { useCampuses } from '../hooks/useCampuses';
 import { DATA_TYPES, DataType } from '../lib/types';
 import Modal from './Modal';
 
-export default function ManageLayoutModal({ onClose }: { onClose: () => void }) {
-  const { data } = useLayout();
+// campusId mirrors whatever the Matrix's Campus selector is currently set
+// to: a specific campus scopes this modal's list to exactly that campus's
+// sections (so editing Blaine never shows Plymouth's layout), matching what
+// the Matrix itself already shows. null ("All Campuses") shows everything,
+// same as the Matrix in that state.
+export default function ManageLayoutModal({ onClose, campusId }: { onClose: () => void; campusId: string | null }) {
+  const { data } = useLayout(campusId);
+  const { data: campusData } = useCampuses();
   const mutations = useLayoutMutations();
   const [newSectionName, setNewSectionName] = useState('');
+  const [newSectionCampusId, setNewSectionCampusId] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const allCampuses = campusData?.campuses ?? [];
+  const activeCampuses = allCampuses.filter((c) => c.active);
+  const campusNameById = new Map(allCampuses.map((c) => [c.id, c.name]));
+  const scopedCampusName = campusId ? campusNameById.get(campusId) : null;
+  // With a specific campus already selected there's nothing to choose — new
+  // sections just go there. Only "All Campuses" needs an explicit picker.
+  const resolvedCampusId = campusId || newSectionCampusId || activeCampuses.find((c) => c.isDefault)?.id || '';
+
+  async function onAddSection() {
+    if (!newSectionName.trim()) return;
+    setError(null);
+    try {
+      await mutations.addSection.mutateAsync({ name: newSectionName.trim(), campusId: resolvedCampusId || undefined });
+      setNewSectionName('');
+    } catch (err: any) {
+      setError(err.message ?? 'Could not add section');
+    }
+  }
 
   return (
-    <Modal title="Manage Layout" onClose={onClose}>
+    <Modal title={scopedCampusName ? `Manage Layout — ${scopedCampusName}` : 'Manage Layout'} onClose={onClose}>
       <div className="space-y-4 mb-6">
         {(data?.sections ?? []).map((section, sIdx, sArr) => (
           <div key={section.id} className="border border-slate-200 rounded-lg p-3">
             <div className="flex items-center justify-between mb-2">
-              <EditableName
-                value={section.name}
-                onSave={(name) => mutations.updateSection.mutate({ id: section.id, name })}
-                className="font-medium text-slate-800"
-              />
+              <div className="flex items-center gap-2 min-w-0">
+                <EditableName
+                  value={section.name}
+                  onSave={(name) => mutations.updateSection.mutate({ id: section.id, name })}
+                  className="font-medium text-slate-800"
+                />
+                {allCampuses.length > 1 && (
+                  <select
+                    value={section.campusId}
+                    onChange={(e) => mutations.updateSection.mutate({ id: section.id, campusId: e.target.value })}
+                    title="Move this section to a different campus"
+                    className="text-[10px] uppercase tracking-wide text-slate-400 border-none bg-transparent focus:outline-none focus:ring-1 focus:ring-slate-300 rounded flex-shrink-0"
+                  >
+                    {!campusNameById.has(section.campusId) && <option value={section.campusId}>Unknown campus</option>}
+                    {activeCampuses.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
               <div className="flex items-center gap-1">
                 <ReorderButtons
                   disabledUp={sIdx === 0}
@@ -86,23 +131,35 @@ export default function ManageLayoutModal({ onClose }: { onClose: () => void }) 
         ))}
       </div>
 
-      <div className="flex gap-2 border-t border-slate-200 pt-4">
-        <input
-          className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-          placeholder="New section name"
-          value={newSectionName}
-          onChange={(e) => setNewSectionName(e.target.value)}
-        />
-        <button
-          onClick={() => {
-            if (!newSectionName.trim()) return;
-            mutations.addSection.mutate(newSectionName.trim());
-            setNewSectionName('');
-          }}
-          className="rounded-md bg-slate-900 text-white px-4 py-1.5 text-sm font-medium hover:bg-slate-700"
-        >
-          Add Section
-        </button>
+      <div className="border-t border-slate-200 pt-4 space-y-2">
+        <div className="flex gap-2">
+          <input
+            className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+            placeholder="New section name"
+            value={newSectionName}
+            onChange={(e) => setNewSectionName(e.target.value)}
+          />
+          {!campusId && allCampuses.length > 1 && (
+            <select
+              value={resolvedCampusId}
+              onChange={(e) => setNewSectionCampusId(e.target.value)}
+              className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+            >
+              {activeCampuses.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            onClick={onAddSection}
+            className="rounded-md bg-slate-900 text-white px-4 py-1.5 text-sm font-medium hover:bg-slate-700 flex-shrink-0"
+          >
+            Add Section
+          </button>
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
       </div>
     </Modal>
   );

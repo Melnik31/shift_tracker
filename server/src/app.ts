@@ -10,6 +10,8 @@ import shiftRoutes from './routes/shifts';
 import myShiftsRoutes from './routes/myShifts';
 import analyticsRoutes from './routes/analytics';
 import payrollRoutes from './routes/payroll';
+import adminRoutes from './routes/admins';
+import campusRoutes from './routes/campuses';
 
 // Factory rather than a module-level singleton so tests can spin up an
 // isolated app (and isolated in-memory session store) per test file.
@@ -41,6 +43,8 @@ export function createApp() {
   app.use('/api/my/shifts', myShiftsRoutes);
   app.use('/api/analytics', analyticsRoutes);
   app.use('/api/payroll', payrollRoutes);
+  app.use('/api/admin-users', adminRoutes);
+  app.use('/api/campuses', campusRoutes);
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
 

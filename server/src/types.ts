@@ -15,8 +15,20 @@ export type SessionType = (typeof SESSION_TYPES)[number];
 
 // AdminUser.role. The Employee model (PIN login) has no role column of its
 // own — every employee session implicitly maps to COACH (see auth.ts).
-export const ROLES = ['COACH', 'DIRECTOR', 'ADMIN', 'CEO'] as const;
+// ADMIN/CEO are unrestricted (every Campus in the workspace); DIRECTOR and
+// SENIOR_LEAD_INSTRUCTOR are scoped to their assigned Campus (see lib/campusScope.ts).
+export const ROLES = ['COACH', 'DIRECTOR', 'SENIOR_LEAD_INSTRUCTOR', 'ADMIN', 'CEO'] as const;
 export type Role = (typeof ROLES)[number];
+
+// The roles assignable to an AdminUser through Manage Admins. COACH is
+// excluded — it's the implicit Employee/PIN-login role, never assigned to
+// an AdminUser record. See routes/admins.ts.
+export const ASSIGNABLE_ADMIN_ROLES = ['DIRECTOR', 'SENIOR_LEAD_INSTRUCTOR', 'ADMIN', 'CEO'] as const;
+export type AssignableAdminRole = (typeof ASSIGNABLE_ADMIN_ROLES)[number];
+
+// Roles restricted to a single Campus (the flip side of campusScopeFor's
+// UNRESTRICTED_ROLES) — a campusId is required when assigning one of these.
+export const CAMPUS_SCOPED_ROLES = ['DIRECTOR', 'SENIOR_LEAD_INSTRUCTOR'] as const;
 
 // PayrollPeriod.status lifecycle.
 export const PAYROLL_PERIOD_STATUSES = ['OPEN', 'REVIEWED', 'APPROVED'] as const;

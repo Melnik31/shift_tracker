@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createApp } from '../app';
 import { resetDb } from '../testUtils/resetDb';
-import { signupAdmin, loginEmployee, seedAdminWithRole } from '../testUtils/authHelpers';
+import { signupAdmin, loginEmployee, seedAdminWithRole, getDefaultCampus } from '../testUtils/authHelpers';
 
 const app = createApp();
 
@@ -130,7 +130,12 @@ describe('layout role gating (requireRole DIRECTOR/ADMIN/CEO)', () => {
 
   it('DIRECTOR, ADMIN, and CEO all succeed identically on reads and mutations', async () => {
     const { agent: adminAgent, workspace } = await signupAdmin(app, { workspaceCode: 'LROLE2' });
-    const directorAgent = await seedAdminWithRole(app, workspace.id, 'director@lrole2.example', 'DIRECTOR');
+    // DIRECTOR is Campus-scoped (see campusIsolation.test.ts for the
+    // cross-campus restriction itself) — assigning them to the workspace's
+    // own default Campus is what "succeeds identically" means here: full
+    // capability within their campus, not cross-campus reach.
+    const defaultCampus = await getDefaultCampus(workspace.id);
+    const directorAgent = await seedAdminWithRole(app, workspace.id, 'director@lrole2.example', 'DIRECTOR', { campusId: defaultCampus.id });
     const ceoAgent = await seedAdminWithRole(app, workspace.id, 'ceo@lrole2.example', 'CEO');
 
     for (const [label, agent] of [['admin', adminAgent], ['director', directorAgent], ['ceo', ceoAgent]] as const) {

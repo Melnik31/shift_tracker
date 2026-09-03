@@ -11,8 +11,9 @@ export const STATUS_COLORS: Record<string, string> = {
   COMPLETED: '#22c55e',
 };
 
-// Shared with CellPopover (edit control), MatrixView (block indicator), and
-// MyShifts (employee badge) so a session type reads the same everywhere.
+// Shared with EditShiftBlockModal (edit control), MatrixView (block
+// indicator), and MyShifts (employee badge) so a session type reads the
+// same everywhere.
 export const SESSION_TYPE_COLORS: Record<string, string> = {
   'Ice Session': '#3b82f6',
   'Skill Session': '#a855f7',

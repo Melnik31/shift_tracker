@@ -10,6 +10,7 @@
     "db:migrate": "prisma migrate dev --name init",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:maphockey-schedule": "tsx prisma/seedMapHockeySchedule.ts",
     "db:reset": "prisma migrate reset --force",
     "test": "vitest run"
   },

@@ -4,9 +4,10 @@ import { prisma } from '../db';
 import { requireRole } from '../middleware/auth';
 
 const router = Router();
-// TODO(campus-scoping): once Campus scoping exists, DIRECTOR access here
-// should narrow to their own campus only, rather than the whole workspace.
-router.use(requireRole('DIRECTOR', 'ADMIN', 'CEO'));
+// Campus scoping (lib/campusScope.ts) is deliberately NOT applied here yet —
+// employee campus behavior is a follow-up phase. SENIOR_LEAD_INSTRUCTOR gets
+// the same full-workspace access DIRECTOR already had.
+router.use(requireRole('DIRECTOR', 'SENIOR_LEAD_INSTRUCTOR', 'ADMIN', 'CEO'));
 
 router.get('/', async (req, res) => {
   const workspaceId = req.session.workspaceId!;

@@ -20,6 +20,7 @@ model Workspace {
 
   adminUsers  AdminUser[]
   employees   Employee[]
+  campuses    Campus[]
   sections    Section[]
   shifts      Shift[]
   payrollPeriods    PayrollPeriod[]
@@ -27,9 +28,36 @@ model Workspace {
   payrollPeriodReopens PayrollPeriodReopen[]
 }
 
+// A Workspace subdivision that scopes DIRECTOR/SENIOR_LEAD_INSTRUCTOR access (ADMIN/CEO see
+// every Campus in the workspace — see campusScopeFor in src/lib/campusScope.ts).
+// Every Workspace always has exactly one Campus with isDefault=true: created
+// at signup for new workspaces, and backfilled as "Main Campus" for pre-
+// existing ones (see prisma/backfillDefaultCampus.ts). Section creation falls
+// back to this default Campus when the caller doesn't specify one, so the
+// existing single-campus UI keeps working unchanged.
+model Campus {
+  id          String   @id @default(uuid())
+  workspaceId String
+  name        String
+  sortOrder   Int      @default(0)
+  isDefault   Boolean  @default(false)
+  // Deactivated campuses are hidden from "create new" pickers (new Sections,
+  // new Director/SLI assignments) but existing Sections/admins under them are
+  // untouched — see routes/campuses.ts. Can't deactivate the default campus;
+  // another must be set default first.
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  workspace  Workspace   @relation(fields: [workspaceId], references: [id])
+  sections   Section[]
+  adminUsers AdminUser[]
+
+  @@index([workspaceId])
+}
+
 // SQLite has no native Prisma enum support (see dataType/statusValue note
 // below), so role is a plain string constrained to a union type in the TS
-// layer — see ROLES in src/types.ts. Valid values: COACH | DIRECTOR | ADMIN | CEO.
+// layer — see ROLES in src/types.ts. Valid values: COACH | DIRECTOR | SENIOR_LEAD_INSTRUCTOR | ADMIN | CEO.
 // Existing rows default to ADMIN on migration; reassign manually afterward.
 model AdminUser {
   id           String   @id @default(uuid())
@@ -37,13 +65,22 @@ model AdminUser {
   email        String
   passwordHash String
   role         String   @default("ADMIN")
+  // Null = unrestricted (ADMIN/CEO see every Campus in the workspace). Set =
+  // scoped to exactly that one Campus (DIRECTOR/SENIOR_LEAD_INSTRUCTOR) — see campusScopeFor.
+  campusId     String?
+  // Deactivated admins can't log in (see routes/auth.ts) — soft-delete
+  // rather than a hard DELETE, since PayrollAdjustment/PayrollPeriodReopen
+  // hold non-nullable createdBy FKs to this table (see routes/admins.ts).
+  active       Boolean  @default(true)
   createdAt    DateTime @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id])
+  campus    Campus?   @relation(fields: [campusId], references: [id])
   createdAdjustments PayrollAdjustment[]
   createdReopens PayrollPeriodReopen[]
 
   @@unique([workspaceId, email])
+  @@index([campusId])
 }
 
 model Employee {
@@ -69,13 +106,16 @@ model Employee {
 model Section {
   id          String   @id @default(uuid())
   workspaceId String
+  campusId    String
   name        String
   sortOrder   Int      @default(0)
 
   workspace Workspace  @relation(fields: [workspaceId], references: [id])
+  campus    Campus     @relation(fields: [campusId], references: [id])
   locations Location[]
 
   @@index([workspaceId])
+  @@index([campusId])
 }
 
 model Location {
