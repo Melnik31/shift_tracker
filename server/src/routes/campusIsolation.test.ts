@@ -1,6 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import fs from 'fs';
-import path from 'path';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { createApp } from '../app';
 import { resetDb } from '../testUtils/resetDb';
 import { signupAdmin, seedAdminWithRole, getDefaultCampus, createCampus } from '../testUtils/authHelpers';
@@ -20,17 +18,9 @@ import { signupAdmin, seedAdminWithRole, getDefaultCampus, createCampus } from '
 // routes/employees.ts.
 
 const app = createApp();
-const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
-const uploadedPaths: string[] = [];
 
 beforeEach(async () => {
   await resetDb();
-});
-
-afterEach(() => {
-  for (const p of uploadedPaths.splice(0)) {
-    fs.rm(p, { force: true }, () => {});
-  }
 });
 
 async function setupTwoCampuses(workspaceCode: string) {
@@ -244,7 +234,6 @@ describe('campus isolation — shifts', () => {
 
     const upload = await adminAgent.post(`/api/shifts/cells/${cellB}/files`).attach('file', Buffer.from('x'), 'x.txt');
     expect(upload.status).toBe(201);
-    uploadedPaths.push(path.join(UPLOAD_DIR, path.basename(upload.body.url)));
 
     const deniedDelete = await directorA.delete(`/api/shifts/files/${upload.body.id}`);
     expect(deniedDelete.status).toBe(404);

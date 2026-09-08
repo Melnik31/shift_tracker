@@ -1,14 +1,12 @@
 import { Router } from 'express';
 import multer from 'multer';
-import fs from 'fs';
-import path from 'path';
-import crypto from 'crypto';
 import { prisma } from '../db';
 import { requireRole } from '../middleware/auth';
 import { STATUS_VALUES, SESSION_TYPES } from '../types';
 import { rejectIfLocked } from '../lib/payrollLock';
 import { campusScopeFor, NO_CAMPUS_ASSIGNED } from '../lib/campusScope';
 import { subRowInScope, shiftInScope, cellValueInScope, fileUploadInScope, campusIdForSubRow } from '../lib/ownership';
+import { uploadFile, deleteFile } from '../lib/storage';
 
 const router = Router();
 // Campus scoping is enforced per-handler below via campusScopeFor/the
@@ -16,14 +14,11 @@ const router = Router();
 // DIRECTOR/SENIOR_LEAD_INSTRUCTOR only their assigned Campus.
 router.use(requireRole('DIRECTOR', 'SENIOR_LEAD_INSTRUCTOR', 'ADMIN', 'CEO'));
 
-const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-
+// Buffers the upload in memory instead of writing to local disk — the
+// handler below streams that buffer straight to Supabase Storage
+// (lib/storage.ts) once it's confirmed the cell exists and isn't locked.
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-    filename: (_req, file, cb) => cb(null, `${crypto.randomUUID()}-${file.originalname}`),
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
@@ -273,19 +268,14 @@ router.post('/cells/:id/files', upload.single('file'), async (req, res) => {
   const existing = await cellValueInScope(req.params.id, workspaceId, scope);
   if (!existing) return res.status(404).json({ error: 'Cell not found' });
   if (!req.file) return res.status(400).json({ error: 'file is required' });
-  // multer already wrote the file to disk before this handler runs — clean it
-  // up on a lock rejection so a denied upload doesn't leave an orphan behind.
-  if (await rejectIfLocked(req, res, workspaceId, existing.shift.date)) {
-    fs.rm(path.join(UPLOAD_DIR, req.file.filename), { force: true }, () => {});
-    return;
-  }
+  // The upload only lives in memory so far (multer.memoryStorage) — unlike
+  // the old disk-storage version, a lock rejection here needs no cleanup:
+  // nothing was ever written anywhere.
+  if (await rejectIfLocked(req, res, workspaceId, existing.shift.date)) return;
 
+  const { url } = await uploadFile(req.file.buffer, req.file.originalname, req.file.mimetype);
   const fileUpload = await prisma.fileUpload.create({
-    data: {
-      cellValueId: existing.id,
-      filename: req.file.originalname,
-      url: `/uploads/${req.file.filename}`,
-    },
+    data: { cellValueId: existing.id, filename: req.file.originalname, url },
   });
   res.status(201).json(fileUpload);
 });
@@ -297,8 +287,7 @@ router.delete('/files/:id', async (req, res) => {
   if (!file) return res.status(404).json({ error: 'File not found' });
   if (await rejectIfLocked(req, res, workspaceId, file.cellValue.shift.date)) return;
 
-  const diskPath = path.join(UPLOAD_DIR, path.basename(file.url));
-  fs.rm(diskPath, { force: true }, () => {});
+  await deleteFile(file.url);
   await prisma.fileUpload.delete({ where: { id: file.id } });
   res.json({ ok: true });
 });

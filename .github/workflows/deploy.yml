@@ -1,0 +1,99 @@
+name: Test, migrate, and deploy
+
+# staging and main map to two fully separate stacks (own Supabase project,
+# own Railway service, own Vercel project) — see DEPLOYING.md. Every secret
+# below is read from the matching GitHub Environment ("staging" or
+# "production"), never a single shared value, so a staging run can never
+# touch production's database or trigger a production deploy.
+on:
+  push:
+    branches: [staging, main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: shifttracker
+          POSTGRES_PASSWORD: shifttracker
+          POSTGRES_DB: shifttracker_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U shifttracker -d shifttracker_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - run: npx tsc --noEmit
+        working-directory: server
+      - run: npm test
+        working-directory: server
+        env:
+          # The test suite's own vitest.config.ts points at this same
+          # localhost:5432/shifttracker_test — matches the service container
+          # above exactly, so no override needed here beyond what's already
+          # hardcoded there for local dev. Supabase Storage tests (Step 4)
+          # do need real credentials though, since they're not mocked:
+          SUPABASE_URL: ${{ vars.STAGING_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_STORAGE_BUCKET: shift-attachments
+      - run: npm ci
+        working-directory: client
+      - run: npx tsc --noEmit
+        working-directory: client
+
+  migrate-and-deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+        working-directory: server
+
+      # Applies only already-committed migration files (server/prisma/migrations) —
+      # never generates one, never prompts. Safe to run unattended. Uses
+      # DIRECT_URL (non-pooled) since migrations need a real connection,
+      # not PgBouncer — see DEPLOYING.md.
+      - name: Run database migrations
+        run: npx prisma migrate deploy
+        working-directory: server
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+
+      # Deploying explicitly here (rather than relying on Railway's/Vercel's
+      # own "auto-deploy on push") guarantees the migration above always
+      # finishes first — turn off each platform's native auto-deploy for
+      # this repo so the two mechanisms don't race each other.
+      - name: Deploy API to Railway
+        run: npx --yes @railway/cli up --service ${{ vars.RAILWAY_SERVICE_ID }} --detach
+        working-directory: server
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Deploy client to Vercel
+        run: |
+          npx --yes vercel pull --yes --environment=${{ github.ref_name == 'main' && 'production' || 'preview' }} --token "$VERCEL_TOKEN"
+          npx --yes vercel build ${{ github.ref_name == 'main' && '--prod' || '' }} --token "$VERCEL_TOKEN"
+          npx --yes vercel deploy --prebuilt ${{ github.ref_name == 'main' && '--prod' || '' }} --token "$VERCEL_TOKEN"
+        working-directory: client
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}

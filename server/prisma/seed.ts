@@ -8,7 +8,7 @@ import bcrypt from 'bcryptjs';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import type { DataType } from '../src/types';
+import { ONBOARDING_COMPLETE_STEP, type DataType } from '../src/types';
 
 const prisma = new PrismaClient();
 
@@ -29,7 +29,7 @@ function dateOffset(daysAgo: number): string {
 
 async function createWorkspace(name: string, workspaceCode: string) {
   return prisma.workspace.create({
-    data: { name, workspaceCode, onboardingStep: 3 }, // seeded demos skip the wizard
+    data: { name, workspaceCode, onboardingStep: ONBOARDING_COMPLETE_STEP }, // seeded demos skip the wizard
   });
 }
 
@@ -593,6 +593,16 @@ async function printSummary(label: string, workspaceId: string) {
 }
 
 async function main() {
+  // This wipes every table in whatever database DATABASE_URL points at —
+  // fine for a local/demo database, catastrophic against a real production
+  // one. NODE_ENV=production is the same flag app.ts already gates
+  // cookie security on (see DEPLOYING.md), so this refuses to run anywhere
+  // that flag is set rather than trusting DATABASE_URL alone to look
+  // "obviously not production."
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Refusing to run prisma/seed.ts with NODE_ENV=production — this wipes the entire database.');
+  }
+
   console.log('Clearing existing data...');
   await prisma.fileUpload.deleteMany();
   await prisma.cellStaffAssignment.deleteMany();

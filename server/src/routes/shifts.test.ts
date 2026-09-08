@@ -1,26 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import fs from 'fs';
-import path from 'path';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { createApp } from '../app';
 import { resetDb } from '../testUtils/resetDb';
 import { signupAdmin, loginEmployee, seedAdminWithRole, getDefaultCampus } from '../testUtils/authHelpers';
 
 const app = createApp();
-const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
-
-// File-upload tests write into the real server/uploads dir (the route
-// hardcodes that path). Track every path we create and unlink it afterward
-// so the test suite never leaves artifacts next to real seeded demo files.
-const uploadedPaths: string[] = [];
 
 beforeEach(async () => {
   await resetDb();
-});
-
-afterEach(() => {
-  for (const p of uploadedPaths.splice(0)) {
-    fs.rm(p, { force: true }, () => {});
-  }
 });
 
 async function makeStatusSubRow(agent: Awaited<ReturnType<typeof signupAdmin>>['agent']) {
@@ -200,7 +186,7 @@ describe('cell value updates', () => {
 });
 
 describe('file uploads on cell values', () => {
-  it('uploads a file, lists it on the cell, then deletes it from DB and disk', async () => {
+  it('uploads a file to Storage, lists it on the cell, then deletes it from both DB and Storage', async () => {
     const { agent } = await signupAdmin(app);
     const subRow = await makeStatusSubRow(agent);
     const shift = (
@@ -213,17 +199,20 @@ describe('file uploads on cell values', () => {
       .attach('file', Buffer.from('hello world'), 'notes.txt');
     expect(upload.status).toBe(201);
     expect(upload.body.filename).toBe('notes.txt');
+    expect(upload.body.url).toContain('/storage/v1/object/public/');
 
-    const diskPath = path.join(UPLOAD_DIR, path.basename(upload.body.url));
-    uploadedPaths.push(diskPath);
-    expect(fs.existsSync(diskPath)).toBe(true);
+    // Round-trips through the real bucket, not just a plausible-looking URL.
+    const fetched = await fetch(upload.body.url);
+    expect(fetched.status).toBe(200);
+    expect(await fetched.text()).toBe('hello world');
 
     const withFile = await agent.get('/api/shifts').query({ date: '2026-08-17' });
     expect(withFile.body.shifts[0].cellValues[0].fileUploads).toHaveLength(1);
 
     const del = await agent.delete(`/api/shifts/files/${upload.body.id}`);
     expect(del.status).toBe(200);
-    expect(fs.existsSync(diskPath)).toBe(false);
+    const afterDelete = await fetch(upload.body.url);
+    expect(afterDelete.status).toBe(400); // Supabase's "object not found" response
 
     const withoutFile = await agent.get('/api/shifts').query({ date: '2026-08-17' });
     expect(withoutFile.body.shifts[0].cellValues[0].fileUploads).toHaveLength(0);

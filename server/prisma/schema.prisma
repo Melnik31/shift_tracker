@@ -3,8 +3,18 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // DATABASE_URL: what the running app connects through — Supabase's
+  // pooled (PgBouncer, port 6543) connection string in staging/production,
+  // so many concurrent app requests don't each hold their own direct
+  // Postgres connection. Just a plain connection locally (docker-compose).
+  url       = env("DATABASE_URL")
+  // DIRECT_URL: only used by `prisma migrate`/`db push` — DDL and Prisma's
+  // migration advisory locks need a real, non-pooled connection (Supabase's
+  // port 5432 URL); PgBouncer's transaction-mode pooling doesn't support
+  // them reliably. Same value as DATABASE_URL locally, where there's no
+  // pooler at all. See DEPLOYING.md.
+  directUrl = env("DIRECT_URL")
 }
 
 // ── Tenancy ──────────────────────────────────────────────────────────────
@@ -57,9 +67,12 @@ model Campus {
   @@index([workspaceId])
 }
 
-// SQLite has no native Prisma enum support (see dataType/statusValue note
-// below), so role is a plain string constrained to a union type in the TS
-// layer — see ROLES in src/types.ts. Valid values: COACH | DIRECTOR | SENIOR_LEAD_INSTRUCTOR | ADMIN | CEO.
+// Originally a plain string because the SQLite datasource had no native
+// Prisma enum support; kept that way after the Postgres migration too,
+// since switching to a real Postgres enum now would be an unrelated
+// schema change, not something this migration needs — role stays
+// constrained to a union type in the TS layer instead, see ROLES in
+// src/types.ts. Valid values: COACH | DIRECTOR | SENIOR_LEAD_INSTRUCTOR | ADMIN | CEO.
 // Existing rows default to ADMIN on migration; reassign manually afterward.
 model AdminUser {
   id           String   @id @default(uuid())
@@ -170,8 +183,10 @@ model Location {
   @@index([sectionId])
 }
 
-// SQLite has no native enum support in Prisma; dataType/statusValue are
-// plain strings constrained to a union type in the TS layer (see src/types.ts).
+// Originally plain strings because the SQLite datasource had no native
+// Prisma enum support; kept that way on Postgres too (see the Role comment
+// above) — dataType/statusValue are constrained to a union type in the TS
+// layer instead (see src/types.ts).
 // Valid dataType values: BADGE | STAFF | TEXT | LINK | FILE | STATUS
 
 model SubRow {

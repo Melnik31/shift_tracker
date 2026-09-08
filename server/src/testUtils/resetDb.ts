@@ -1,6 +1,6 @@
 import { prisma } from '../db';
 
-// Deletes leaf-to-root so SQLite FK constraints never reject the delete.
+// Deletes leaf-to-root so FK constraints never reject the delete.
 // Mirrors the clearing order in prisma/seed.ts's main().
 export async function resetDb() {
   await prisma.fileUpload.deleteMany();
