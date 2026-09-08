@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci
@@ -61,7 +61,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci
@@ -78,25 +78,19 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
 
-      # Deploying explicitly here (rather than relying on Render's/Vercel's
-      # own "auto-deploy on push") guarantees the migration above always
-      # finishes first — turn off each platform's native auto-deploy for
-      # this repo so the two mechanisms don't race each other. Render's
-      # deploy hook just tells it to pull and redeploy the latest commit on
-      # the connected branch — no CLI/token needed, just this one URL,
-      # generated under the service's Settings → Deploy Hook.
+      # Deploying explicitly here (rather than relying on Render's own
+      # "auto-deploy on push") guarantees the migration above always
+      # finishes first — turn off Render's native auto-deploy for this repo
+      # so the two mechanisms don't race. The deploy hook just tells Render
+      # to pull and redeploy the latest commit on the connected branch — no
+      # CLI/token needed, just this one URL, generated under the service's
+      # Settings → Deploy Hook.
+      #
+      # Vercel is deliberately NOT deployed from here — it's just a static
+      # build with no schema/migration dependency to sequence against, so
+      # its own native GitHub integration (auto-deploy on push) is simpler
+      # and just as safe. Leave Vercel's auto-deploy ON.
       - name: Deploy API to Render
         run: curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
-
-      - name: Deploy client to Vercel
-        run: |
-          npx --yes vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
-          npx --yes vercel build --prod --token "$VERCEL_TOKEN"
-          npx --yes vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN"
-        working-directory: client
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}

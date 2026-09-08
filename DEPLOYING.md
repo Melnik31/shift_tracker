@@ -99,6 +99,10 @@ before reseeding — it's a local/demo-data tool only.
    fixed `ALLOWED_ORIGINS` entry — either add the specific preview domain
    you need to the API's allow-list, or point previews at a shared staging
    API instead of expecting them to hit production.
+4. Leave Vercel's native Git integration (auto-deploy on push) **on** —
+   unlike Render, there's no migration step to sequence against here, so
+   `deploy.yml` doesn't deploy the client at all; Vercel handles it
+   entirely on its own.
 
 ## Staging
 
@@ -113,11 +117,12 @@ duplicated.
 `deploy.yml` runs tests (against a Postgres service container, plus the
 real Supabase Storage bucket for upload tests since those aren't mocked),
 then `prisma migrate deploy`, then an explicit deploy to Render (via its
-deploy hook URL) and Vercel (via its CLI) — deliberately not relying on
-either platform's built-in "auto-deploy on push," since that can't be
-sequenced after the migration step and could deploy code against a schema
-it doesn't match yet. **Turn off native auto-deploy on both platforms for
-this repo** so the two mechanisms don't race.
+deploy hook URL) — deliberately not relying on Render's built-in
+"auto-deploy on push," since that can't be sequenced after the migration
+step and could deploy code against a schema it doesn't match yet. **Turn
+off native auto-deploy on Render** for this repo so the two mechanisms
+don't race. Vercel has no such dependency (static build, no schema to wait
+on), so its native auto-deploy stays on and `deploy.yml` never touches it.
 
 ### One-time manual setup this repo's automation can't do for you
 
@@ -127,11 +132,10 @@ account-level actions on each platform:
 - [ ] Create the **production** GitHub Environment (repo Settings →
       Environments) and add its secrets/variables: `DATABASE_URL`,
       `DIRECT_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
-      `RENDER_DEPLOY_HOOK_URL`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`,
-      `VERCEL_PROJECT_ID`.
+      `RENDER_DEPLOY_HOOK_URL`.
 - [ ] Create the Render service for `server/`, pointed at the existing
       Supabase project's connection strings.
 - [ ] Create the Vercel project for `client/`, with `VITE_API_URL` pointed
       at the Render service's URL.
-- [ ] Disable auto-deploy-on-push in both Render's and Vercel's project
-      settings for this repo, since `deploy.yml` now owns that.
+- [ ] Disable auto-deploy-on-push in Render's project settings for this
+      repo, since `deploy.yml` now owns that. Leave Vercel's on.
