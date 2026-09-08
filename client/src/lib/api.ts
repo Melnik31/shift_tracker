@@ -1,9 +1,11 @@
 // Relative '/api' works when the client and API share an origin (local dev,
 // via Vite's proxy — see vite.config.ts). Once they're on different domains
-// (client on Vercel, API on Railway/Render), a relative path would resolve
-// against the client's own origin instead — VITE_API_URL points it at the
-// real API origin explicitly in that case.
-const BASE = import.meta.env.VITE_API_URL || '/api';
+// (client on Vercel, API on Render), a relative path would resolve against
+// the client's own origin instead — VITE_API_URL points it at the real API
+// origin explicitly in that case. It's just the bare origin (e.g.
+// "https://api.example.com", no trailing /api) — the /api suffix is always
+// appended here, so it doesn't need to be repeated in the env var.
+const BASE = (import.meta.env.VITE_API_URL || '') + '/api';
 
 export class ApiError extends Error {
   status: number;
