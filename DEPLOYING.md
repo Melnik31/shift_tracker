@@ -26,16 +26,22 @@ and in this repo's "production" GitHub Environment secrets (for
 
 ### Supabase's connection pooler
 
-Supabase project settings → Database gives you two connection strings:
+Supabase project settings → Database gives you three connection strings:
 
 - **Transaction pooler** (port 6543, PgBouncer) — use this for
   `DATABASE_URL`, what the running app connects through. Many concurrent
   requests each briefly borrowing a connection is exactly what the pooler
   is for.
-- **Direct connection** (port 5432) — use this for `DIRECT_URL`.
-  `prisma migrate`/`db push` run DDL and take an advisory lock, neither of
-  which PgBouncer's transaction-mode pooling supports reliably. `schema.prisma`
-  splits these on purpose (`url` vs `directUrl`) — see the comments there.
+- **Session pooler** (port 5432, same pooler host as the transaction one)
+  — use this for `DIRECT_URL`. `prisma migrate`/`db push` run DDL and take
+  an advisory lock, neither of which PgBouncer's transaction-mode pooling
+  supports reliably, so they need a session-level connection — but
+  Supabase's actual **direct connection** (`db.<ref>.supabase.co:5432`) is
+  IPv6-only, which GitHub Actions runners (and plenty of other networks)
+  can't reach at all (`P1001: Can't reach database server`). The session
+  pooler gives the same session-level behavior over an IPv4-reachable
+  address instead. `schema.prisma` splits these on purpose (`url` vs
+  `directUrl`) — see the comments there.
 
 Locally (`docker-compose.yml`), there's no pooler at all, so both variables
 just point at the same plain connection string.
