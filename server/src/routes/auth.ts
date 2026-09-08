@@ -24,9 +24,9 @@ router.post('/admin/signup', async (req, res) => {
   // Every workspace always has exactly one default Campus (isDefault=true)
   // from the moment it exists — Section.campusId is required, and
   // pre-existing workspaces get the same invariant via
-  // prisma/backfillDefaultCampus.ts. Nothing yet lets an admin create a
-  // second Campus, so this one campus is where every Section lands until
-  // that management UI exists.
+  // prisma/backfillDefaultCampus.ts. Additional Campuses can be added right
+  // after, in the onboarding wizard's Campuses step or later via Manage
+  // Campuses (routes/campuses.ts) — this one is just the starting point.
   await prisma.campus.create({ data: { workspaceId: workspace.id, name: 'Main Campus', sortOrder: 0, isDefault: true } });
   const admin = await prisma.adminUser.create({
     data: { workspaceId: workspace.id, email, passwordHash: bcrypt.hashSync(password, 10) },

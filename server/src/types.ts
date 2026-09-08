@@ -41,3 +41,8 @@ export type ExceptionKind = (typeof EXCEPTION_KINDS)[number];
 // Placeholders pending a real business rule for what counts as an unusual day.
 export const HIGH_HOURS_THRESHOLD = 12;
 export const LOW_HOURS_THRESHOLD = 1;
+
+// The onboarding wizard (client/src/pages/Onboarding/Onboarding.tsx) has
+// this many steps; Workspace.onboardingStep reaching this value means it's
+// done. Mirrored as a client-side constant of the same name.
+export const ONBOARDING_COMPLETE_STEP = 4;

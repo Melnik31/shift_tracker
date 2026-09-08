@@ -109,7 +109,7 @@ describe('layout CRUD (sections/locations/subrows)', () => {
 
     const res = await agent.post('/api/layout/skip-onboarding');
     expect(res.status).toBe(200);
-    expect(res.body.onboardingStep).toBe(3);
+    expect(res.body.onboardingStep).toBe(4);
 
     const tree = await agent.get('/api/layout');
     expect(tree.body.sections).toHaveLength(1);

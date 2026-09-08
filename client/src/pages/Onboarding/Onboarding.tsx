@@ -4,12 +4,14 @@ import { api } from '../../lib/api';
 import { useAuth } from '../../hooks/useAuth';
 import { useLayout, useLayoutMutations } from '../../hooks/useLayout';
 import { DATA_TYPES, DataType } from '../../lib/types';
+import { ONBOARDING_COMPLETE_STEP } from '../../lib/constants';
+import CampusManager from '../../components/CampusManager';
 
-const STEP_LABELS = ['Workspace', 'Sections & Locations', 'Sub-Rows'];
+const STEP_LABELS = ['Workspace', 'Campuses', 'Sections & Locations', 'Sub-Rows'];
 
 export default function Onboarding() {
   const { data: me } = useAuth();
-  const startStep = Math.min(Math.max(me?.workspace.onboardingStep ?? 0, 0), 2) + 1;
+  const startStep = Math.min(Math.max(me?.workspace.onboardingStep ?? 0, 0), ONBOARDING_COMPLETE_STEP - 1) + 1;
   const [step, setStep] = useState(startStep);
   const navigate = useNavigate();
 
@@ -19,7 +21,7 @@ export default function Onboarding() {
   }
 
   async function finish() {
-    await api.patch('/layout/onboarding-step', { step: 3 });
+    await api.patch('/layout/onboarding-step', { step: ONBOARDING_COMPLETE_STEP });
     navigate('/matrix');
   }
 
@@ -55,8 +57,9 @@ export default function Onboarding() {
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
           {step === 1 && <StepWorkspace onNext={() => goToStep(2)} />}
-          {step === 2 && <StepSectionsLocations onBack={() => setStep(1)} onNext={() => goToStep(3)} />}
-          {step === 3 && <StepSubRows onBack={() => setStep(2)} onFinish={finish} />}
+          {step === 2 && <StepCampuses onBack={() => setStep(1)} onNext={() => goToStep(3)} />}
+          {step === 3 && <StepSectionsLocations onBack={() => setStep(2)} onNext={() => goToStep(4)} />}
+          {step === 4 && <StepSubRows onBack={() => setStep(3)} onFinish={finish} />}
         </div>
       </div>
     </div>
@@ -120,7 +123,37 @@ function StepWorkspace({ onNext }: { onNext: () => void }) {
   );
 }
 
-// ── Step 2: sections + locations ─────────────────────────────────────────
+// ── Step 2: campuses ──────────────────────────────────────────────────────
+
+// A fresh workspace already has one valid "Main Campus" (created at
+// signup), so Next needs no gating here — this step is for workspaces that
+// actually span multiple locations to set that up before building layout,
+// not a required decision. Same add/rename/deactivate/set-default actions
+// as Manage Campuses (routes/campuses.ts), via the shared CampusManager.
+function StepCampuses({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+  return (
+    <div>
+      <h2 className="text-lg font-medium text-slate-800 mb-1">Set up your Campuses</h2>
+      <p className="text-sm text-slate-500 mb-6">
+        A Campus is a top-level location your Sections belong to — e.g. separate buildings, sites, or regions. Most
+        workspaces only need the one you already have. Add more here if your team operates across several.
+      </p>
+
+      <CampusManager />
+
+      <div className="flex justify-between mt-6">
+        <button onClick={onBack} className="rounded-md px-5 py-2 font-medium text-slate-600 hover:bg-slate-50">
+          Back
+        </button>
+        <button onClick={onNext} className="rounded-md bg-slate-900 text-white px-5 py-2 font-medium hover:bg-slate-700 transition">
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Step 3: sections + locations ─────────────────────────────────────────
 
 function StepSectionsLocations({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
   const { data } = useLayout();
@@ -216,7 +249,7 @@ function StepSectionsLocations({ onBack, onNext }: { onBack: () => void; onNext:
   );
 }
 
-// ── Step 3: sub-rows per location ────────────────────────────────────────
+// ── Step 4: sub-rows per location ────────────────────────────────────────
 
 function StepSubRows({ onBack, onFinish }: { onBack: () => void; onFinish: () => void }) {
   const { data } = useLayout();

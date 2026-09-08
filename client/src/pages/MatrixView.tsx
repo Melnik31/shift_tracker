@@ -13,6 +13,7 @@ import ManageAdminsModal from '../components/ManageAdminsModal';
 import ManageCampusesModal from '../components/ManageCampusesModal';
 import ManageLayoutModal from '../components/ManageLayoutModal';
 import ManageTeamModal from '../components/ManageTeamModal';
+import ManageMenu from '../components/ManageMenu';
 import NewShiftBlockModal from '../components/NewShiftBlockModal';
 import AppHeader from '../components/AppHeader';
 
@@ -116,7 +117,7 @@ export default function MatrixView() {
         date={date}
         onDateChange={setDate}
         showAddShiftButton={false}
-        rightExtra={
+        filterExtra={
           <>
             <CampusSelector value={campusId} onChange={setCampusId} />
             <div className="flex items-center border border-slate-300 rounded-md">
@@ -128,28 +129,28 @@ export default function MatrixView() {
                 +
               </button>
             </div>
+          </>
+        }
+        actionsExtra={
+          <>
             <button
               onClick={() => setShowNewShiftBlock(true)}
               className="rounded-md bg-slate-900 text-white px-3 py-1.5 text-sm font-medium hover:bg-slate-700"
             >
               + New Shift Block
             </button>
-            <button onClick={() => setShowManageLayout(true)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
-              Manage Layout
-            </button>
-            <button onClick={() => setShowManageTeam(true)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
-              Manage Team
-            </button>
-            {canManageAdmins && (
-              <>
-                <button onClick={() => setShowManageAdmins(true)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
-                  Manage Admins
-                </button>
-                <button onClick={() => setShowManageCampuses(true)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
-                  Manage Campuses
-                </button>
-              </>
-            )}
+            <ManageMenu
+              items={[
+                { label: 'Manage Layout', onClick: () => setShowManageLayout(true) },
+                { label: 'Manage Team', onClick: () => setShowManageTeam(true) },
+                ...(canManageAdmins
+                  ? [
+                      { label: 'Manage Admins', onClick: () => setShowManageAdmins(true) },
+                      { label: 'Manage Campuses', onClick: () => setShowManageCampuses(true) },
+                    ]
+                  : []),
+              ]}
+            />
           </>
         }
       />

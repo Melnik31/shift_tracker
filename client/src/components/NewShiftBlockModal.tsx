@@ -225,10 +225,12 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
             {subRows.map((sr) => {
               const conflict = conflictFor(sr.id);
               return (
-                <div key={sr.id} className={`border rounded-md p-3 ${conflict ? 'border-amber-200 bg-amber-50' : 'border-slate-200'}`}>
+                <div key={sr.id} className={`border rounded-md px-3.5 py-3 ${conflict ? 'border-amber-200 bg-amber-50' : 'border-slate-200'}`}>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-slate-700">{sr.label}</span>
-                    <span className="text-[10px] uppercase tracking-wide text-slate-400">{DATA_TYPE_INFO[sr.dataType].label}</span>
+                    <span className="text-sm font-semibold text-slate-800">{sr.label}</span>
+                    <span className="inline-flex items-center rounded-full border border-slate-300 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                      {DATA_TYPE_INFO[sr.dataType].label}
+                    </span>
                   </div>
                   {conflict ? (
                     <p className="text-xs text-amber-700">Already scheduled at this time — skipped</p>
@@ -249,7 +251,7 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
 
         {error && <p className="text-xs text-red-600">{error}</p>}
 
-        <div className="flex justify-end pt-2">
+        <div className="flex justify-end border-t border-slate-200 pt-3">
           <button
             type="submit"
             disabled={submitting}

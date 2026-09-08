@@ -71,16 +71,14 @@ export default function DashboardView() {
         dateRange={dateRange}
         onDateRangeChange={setDateRange}
         showAddShiftButton={false}
-        rightExtra={
-          <>
-            <CampusSelector value={campusId} onChange={setCampusId} />
-            <button
-              onClick={() => setShowNewShiftBlock(true)}
-              className="rounded-md bg-slate-900 text-white px-3 py-1.5 text-sm font-medium hover:bg-slate-700"
-            >
-              + New Shift Block
-            </button>
-          </>
+        filterExtra={<CampusSelector value={campusId} onChange={setCampusId} />}
+        actionsExtra={
+          <button
+            onClick={() => setShowNewShiftBlock(true)}
+            className="rounded-md bg-slate-900 text-white px-3 py-1.5 text-sm font-medium hover:bg-slate-700"
+          >
+            + New Shift Block
+          </button>
         }
       />
 

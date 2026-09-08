@@ -9,7 +9,10 @@ interface Props {
   search: string;
   onSearchChange: (v: string) => void;
   searchPlaceholder?: string;
-  rightExtra?: ReactNode;
+  /** Extra filter/context controls (e.g. Campus selector, Zoom, a period picker) — rendered alongside search/date on the left of the second row. */
+  filterExtra?: ReactNode;
+  /** Page-specific action buttons (e.g. "+ New Shift Block", a Manage menu) — rendered on the right of the second row. */
+  actionsExtra?: ReactNode;
   /** Single-date mode (default) — used by the Facility Matrix View. */
   date?: string;
   onDateChange?: (v: string) => void;
@@ -31,7 +34,8 @@ export default function AppHeader({
   onDateChange,
   dateRange,
   onDateRangeChange,
-  rightExtra,
+  filterExtra,
+  actionsExtra,
   showAddShiftButton = true,
 }: Props) {
   const { data: me, logout } = useAuth();
@@ -40,10 +44,11 @@ export default function AppHeader({
   const effectiveDate = dateRange ? dateRange.start : date ?? '';
 
   return (
-    <header className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between flex-wrap gap-3">
-      <div className="flex items-center gap-6">
+    <header className="bg-white border-b border-slate-200">
+      {/* Row 1: identity — brand, primary nav, sign-out. Never competes with filters/actions below it. */}
+      <div className="px-6 py-3 flex items-center gap-6 border-b border-slate-100">
         <div>
-          <h1 className="text-lg font-semibold text-slate-800">{me?.workspace.name}</h1>
+          <h1 className="text-lg font-bold text-slate-800 tracking-tight">{me?.workspace.name}</h1>
           <p className="text-xs text-slate-400">code: {me?.workspace.workspaceCode}</p>
         </div>
         <nav className="flex gap-1">
@@ -59,9 +64,20 @@ export default function AppHeader({
             </NavLink>
           )}
         </nav>
+        <button
+          onClick={async () => {
+            await logout();
+            navigate('/');
+          }}
+          className="ml-auto text-sm text-slate-500 hover:text-slate-800"
+        >
+          Log out
+        </button>
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
+      {/* Row 2: filters on the left, actions on the right — kept apart so the
+          page's creation/management buttons never get lost among selectors. */}
+      <div className="px-6 py-2.5 flex items-center gap-2 flex-wrap">
         <input
           type="text"
           placeholder={searchPlaceholder ?? 'Search employees...'}
@@ -72,28 +88,25 @@ export default function AppHeader({
         {dateRange && onDateRangeChange ? (
           <DateRangePicker value={dateRange} onChange={onDateRangeChange} />
         ) : (
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => onDateChange?.(e.target.value)}
-            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-          />
+          date !== undefined && (
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => onDateChange?.(e.target.value)}
+              className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+            />
+          )
         )}
+        {filterExtra}
+
+        <div className="flex-1" />
+
         {showAddShiftButton && (
           <button onClick={() => setShowAddShift(true)} className="rounded-md bg-slate-900 text-white px-3 py-1.5 text-sm font-medium hover:bg-slate-700">
             + Add Shift
           </button>
         )}
-        {rightExtra}
-        <button
-          onClick={async () => {
-            await logout();
-            navigate('/');
-          }}
-          className="rounded-md px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100"
-        >
-          Log out
-        </button>
+        {actionsExtra}
       </div>
 
       {showAddShift && <AddShiftModal date={effectiveDate} onClose={() => setShowAddShift(false)} />}

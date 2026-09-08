@@ -73,20 +73,23 @@ export default function PayrollReview() {
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="Search employees..."
-        rightExtra={
+        showAddShiftButton={false}
+        filterExtra={
+          <select
+            value={activePeriodId ?? ''}
+            onChange={(e) => setPeriodId(e.target.value)}
+            className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+          >
+            {periods.length === 0 && <option value="">No periods yet</option>}
+            {periods.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.start} – {p.end} ({p.status})
+              </option>
+            ))}
+          </select>
+        }
+        actionsExtra={
           <>
-            <select
-              value={activePeriodId ?? ''}
-              onChange={(e) => setPeriodId(e.target.value)}
-              className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-            >
-              {periods.length === 0 && <option value="">No periods yet</option>}
-              {periods.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.start} – {p.end} ({p.status})
-                </option>
-              ))}
-            </select>
             <form onSubmit={handleCreatePeriod} className="flex items-center gap-1">
               <input
                 type="date"

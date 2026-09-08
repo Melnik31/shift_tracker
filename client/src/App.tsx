@@ -10,6 +10,7 @@ import DashboardView from './pages/DashboardView';
 import PayrollReview from './pages/PayrollReview';
 import MyShifts from './pages/MyShifts';
 import { useAuth } from './hooks/useAuth';
+import { ONBOARDING_COMPLETE_STEP } from './lib/constants';
 
 function Loading() {
   return <div className="min-h-screen flex items-center justify-center text-slate-500">Loading...</div>;
@@ -20,7 +21,7 @@ function RequireAdmin({ children }: { children: JSX.Element }) {
   if (isLoading) return <Loading />;
   if (!data || data.actorType !== 'admin') return <Navigate to="/admin/login" replace />;
   if (data.admin?.mustChangePassword) return <Navigate to="/admin/set-password" replace />;
-  if ((data.workspace.onboardingStep ?? 3) < 3) return <Navigate to="/onboarding" replace />;
+  if ((data.workspace.onboardingStep ?? ONBOARDING_COMPLETE_STEP) < ONBOARDING_COMPLETE_STEP) return <Navigate to="/onboarding" replace />;
   return children;
 }
 
@@ -29,7 +30,7 @@ function RequireAdminRole({ children }: { children: JSX.Element }) {
   if (isLoading) return <Loading />;
   if (!data || data.actorType !== 'admin') return <Navigate to="/admin/login" replace />;
   if (data.admin?.mustChangePassword) return <Navigate to="/admin/set-password" replace />;
-  if ((data.workspace.onboardingStep ?? 3) < 3) return <Navigate to="/onboarding" replace />;
+  if ((data.workspace.onboardingStep ?? ONBOARDING_COMPLETE_STEP) < ONBOARDING_COMPLETE_STEP) return <Navigate to="/onboarding" replace />;
   if (data.admin?.role !== 'ADMIN') return <Navigate to="/dashboard" replace />;
   return children;
 }

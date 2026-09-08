@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
+import { ONBOARDING_COMPLETE_STEP } from '../lib/constants';
 
 export default function AdminLogin() {
   const [workspaceCode, setWorkspaceCode] = useState('');
@@ -24,7 +25,7 @@ export default function AdminLogin() {
       });
       await refresh();
       if (res.mustChangePassword) navigate('/admin/set-password');
-      else navigate(res.workspace.onboardingStep < 3 ? '/onboarding' : '/matrix');
+      else navigate(res.workspace.onboardingStep < ONBOARDING_COMPLETE_STEP ? '/onboarding' : '/matrix');
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Login failed');
     } finally {

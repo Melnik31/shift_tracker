@@ -5,6 +5,13 @@ import { DataType } from './types';
 export const OPERATIONAL_START = '06:00';
 export const OPERATIONAL_END = '22:00';
 
+// The onboarding wizard (Onboarding.tsx) has this many steps; a
+// workspace's onboardingStep reaching this value means it's done — checked
+// by App.tsx's route guards and AdminLogin's post-login redirect. Kept as
+// one named constant instead of a scattered magic number so adding/removing
+// a step only requires updating it here.
+export const ONBOARDING_COMPLETE_STEP = 4;
+
 // Display-only — the raw DataType value is still what's sent to/from the
 // API everywhere. Shared by the "add sub-row" dropdown and every compact
 // inline badge (ManageLayoutModal's sub-row list, NewShiftBlockModal,

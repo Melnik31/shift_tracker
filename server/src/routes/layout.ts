@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../db';
 import { requireRole } from '../middleware/auth';
-import { DATA_TYPES } from '../types';
+import { DATA_TYPES, ONBOARDING_COMPLETE_STEP } from '../types';
 import { campusScopeFor, campusWhere, defaultCampusId } from '../lib/campusScope';
 import { sectionInScope, locationInScope, subRowInScope } from '../lib/ownership';
 
@@ -328,7 +328,7 @@ router.post('/skip-onboarding', async (req, res) => {
     }
   }
 
-  const workspace = await prisma.workspace.update({ where: { id: workspaceId }, data: { onboardingStep: 3 } });
+  const workspace = await prisma.workspace.update({ where: { id: workspaceId }, data: { onboardingStep: ONBOARDING_COMPLETE_STEP } });
   res.json({ onboardingStep: workspace.onboardingStep });
 });
 
