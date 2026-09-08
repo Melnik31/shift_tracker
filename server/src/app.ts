@@ -37,6 +37,15 @@ const isProduction = process.env.NODE_ENV === 'production';
 export function createApp() {
   const app = express();
 
+  // Render (and most hosting platforms) terminate HTTPS at a proxy/edge
+  // layer and forward plain HTTP internally — without this, Express sees
+  // every request as insecure, and express-session's cookie.secure=true
+  // (set below when isProduction) then silently refuses to ever set the
+  // session cookie at all, even on an otherwise-successful response.
+  // Trusting the first hop's X-Forwarded-Proto is what tells Express the
+  // original request really was HTTPS.
+  if (isProduction) app.set('trust proxy', 1);
+
   app.use(
     cors({
       origin: ALLOWED_ORIGINS,
