@@ -31,7 +31,15 @@ Supabase project settings → Database gives you three connection strings:
 - **Transaction pooler** (port 6543, PgBouncer) — use this for
   `DATABASE_URL`, what the running app connects through. Many concurrent
   requests each briefly borrowing a connection is exactly what the pooler
-  is for.
+  is for. **Must include `?pgbouncer=true` at the end of the connection
+  string.** Without it, Prisma's query engine uses named prepared
+  statements, which PgBouncer's transaction-mode pooling can silently
+  route to a different backend connection than the one that prepared
+  them — surfacing as random `prepared statement "sN" already exists` /
+  `does not exist` Postgres errors (42P05/26000) under real traffic, which
+  crashed the whole process the first time this was missed (see index.ts's
+  `unhandledRejection` handler — added as a backstop, not a fix for this
+  specifically).
 - **Session pooler** (port 5432, same pooler host as the transaction one)
   — use this for `DIRECT_URL`. `prisma migrate`/`db push` run DDL and take
   an advisory lock, neither of which PgBouncer's transaction-mode pooling
