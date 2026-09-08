@@ -1,13 +1,11 @@
 name: Test, migrate, and deploy
 
-# staging and main map to two fully separate stacks (own Supabase project,
-# own Railway service, own Vercel project) — see DEPLOYING.md. Every secret
-# below is read from the matching GitHub Environment ("staging" or
-# "production"), never a single shared value, so a staging run can never
-# touch production's database or trigger a production deploy.
+# Single production stack — no staging environment for now (pre-launch,
+# no real users/data yet; see DEPLOYING.md). Every secret below is read
+# from the "production" GitHub Environment.
 on:
   push:
-    branches: [staging, main]
+    branches: [main]
 
 jobs:
   test:
@@ -25,6 +23,7 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+    environment: production
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -43,9 +42,11 @@ jobs:
           # localhost:5432/shifttracker_test — matches the service container
           # above exactly, so no override needed here beyond what's already
           # hardcoded there for local dev. Supabase Storage tests (Step 4)
-          # do need real credentials though, since they're not mocked:
-          SUPABASE_URL: ${{ vars.STAGING_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          # do need real credentials though, since they're not mocked — this
+          # means CI test runs touch the same bucket production uses, with
+          # small throwaway files each test already cleans up after itself.
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_STORAGE_BUCKET: shift-attachments
       - run: npm ci
         working-directory: client
@@ -55,7 +56,7 @@ jobs:
   migrate-and-deploy:
     needs: test
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    environment: production
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -77,21 +78,23 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
 
-      # Deploying explicitly here (rather than relying on Railway's/Vercel's
+      # Deploying explicitly here (rather than relying on Render's/Vercel's
       # own "auto-deploy on push") guarantees the migration above always
       # finishes first — turn off each platform's native auto-deploy for
-      # this repo so the two mechanisms don't race each other.
-      - name: Deploy API to Railway
-        run: npx --yes @railway/cli up --service ${{ vars.RAILWAY_SERVICE_ID }} --detach
-        working-directory: server
+      # this repo so the two mechanisms don't race each other. Render's
+      # deploy hook just tells it to pull and redeploy the latest commit on
+      # the connected branch — no CLI/token needed, just this one URL,
+      # generated under the service's Settings → Deploy Hook.
+      - name: Deploy API to Render
+        run: curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
 
       - name: Deploy client to Vercel
         run: |
-          npx --yes vercel pull --yes --environment=${{ github.ref_name == 'main' && 'production' || 'preview' }} --token "$VERCEL_TOKEN"
-          npx --yes vercel build ${{ github.ref_name == 'main' && '--prod' || '' }} --token "$VERCEL_TOKEN"
-          npx --yes vercel deploy --prebuilt ${{ github.ref_name == 'main' && '--prod' || '' }} --token "$VERCEL_TOKEN"
+          npx --yes vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
+          npx --yes vercel build --prod --token "$VERCEL_TOKEN"
+          npx --yes vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN"
         working-directory: client
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
