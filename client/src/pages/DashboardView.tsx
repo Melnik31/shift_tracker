@@ -59,9 +59,28 @@ export default function DashboardView() {
     return { presentSessionTypes: types, hasUntypedShift: untyped, hasAnyPaidBreak: anyPaidBreak };
   }, [filteredEmployees, isMultiDay]);
 
+  // Derived from filteredEmployees (search + employment-type filter) rather
+  // than data.totals (a workspace-wide aggregate) — otherwise the stat cards
+  // and "N employees scheduled" badge stay frozen on the unfiltered numbers
+  // while the table below them changes as a filter is applied.
+  const totals = useMemo(() => {
+    let activeHours = 0;
+    let paidBreakHours = 0;
+    let billableHours = 0;
+    let reviewGapCount = 0;
+    for (const emp of filteredEmployees) {
+      activeHours += emp.totalBreakdown.activeHours;
+      paidBreakHours += emp.totalBreakdown.paidBreakHours;
+      billableHours += emp.totalBreakdown.billableHours;
+      for (const day of emp.days) {
+        reviewGapCount += day.breakdown.gaps.filter((g) => g.classification === 'REVIEW_UNPAID').length;
+      }
+    }
+    return { activeHours, paidBreakHours, billableHours, reviewGapCount, employeesScheduled: filteredEmployees.length };
+  }, [filteredEmployees]);
+
   const periodLabel = formatPeriodLabel(dateRange);
-  const totals = data?.totals;
-  const activeEmployeeCount = data?.employees.length ?? 0;
+  const activeEmployeeCount = filteredEmployees.length;
   const singleSearchMatch = search.trim() && filteredEmployees.length === 1 ? filteredEmployees[0] : null;
 
   return (
