@@ -15,6 +15,10 @@ export type PayrollPeriodStatus = (typeof PAYROLL_PERIOD_STATUSES)[number];
 export const EXCEPTION_KINDS = ['MISSING_SESSION_TYPE', 'OVERLAPPING_SHIFTS', 'CANCELLED_SESSION', 'HIGH_HOURS', 'LOW_HOURS'] as const;
 export type ExceptionKind = (typeof EXCEPTION_KINDS)[number];
 
+// Employee.employmentType, mirrors server/src/types.ts.
+export const EMPLOYMENT_TYPES = ['FT', 'PT'] as const;
+export type EmploymentType = (typeof EMPLOYMENT_TYPES)[number];
+
 // AdminUser.role, mirrors server/src/types.ts. COACH is excluded from
 // ASSIGNABLE_ADMIN_ROLES — it's the implicit Employee/PIN-login role, never
 // assigned to an AdminUser through Manage Admins.
@@ -73,6 +77,7 @@ export interface Employee {
   id: string;
   name: string;
   role: string;
+  employmentType: EmploymentType;
   campusId: string | null;
   campus: { id: string; name: string } | null;
 }
@@ -202,6 +207,7 @@ export interface OverviewEmployee {
   id: string;
   name: string;
   role: string;
+  employmentType: EmploymentType;
   days: OverviewDay[];
   totalBreakdown: {
     activeHours: number;
@@ -246,6 +252,7 @@ export interface PayrollException {
 export interface PayrollEmployeeSummary {
   employeeId: string;
   employeeName: string;
+  employmentType: EmploymentType;
   payableHours: number;
   paidBreakHours: number;
   adjustmentHours: number;

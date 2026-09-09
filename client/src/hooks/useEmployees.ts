@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { Employee } from '../lib/types';
+import { Employee, EmploymentType } from '../lib/types';
 
 // campusId narrows the roster to one Campus (plus floating employees — see
 // the Employee.campusId schema comment) — has no effect for a restricted
@@ -18,12 +18,13 @@ export function useEmployeeMutations() {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['employees'] });
 
   const addEmployee = useMutation({
-    mutationFn: (vars: { name: string; role: string; pin: string; campusId?: string }) => api.post('/employees', vars),
+    mutationFn: (vars: { name: string; role: string; pin: string; employmentType?: EmploymentType; campusId?: string }) =>
+      api.post('/employees', vars),
     onSuccess: invalidate,
   });
 
   const updateEmployee = useMutation({
-    mutationFn: (vars: { id: string; name?: string; role?: string; pin?: string; campusId?: string | null }) =>
+    mutationFn: (vars: { id: string; name?: string; role?: string; pin?: string; employmentType?: EmploymentType; campusId?: string | null }) =>
       api.patch(`/employees/${vars.id}`, vars),
     onSuccess: invalidate,
   });

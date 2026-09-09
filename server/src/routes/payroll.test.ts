@@ -177,6 +177,38 @@ describe('payroll period review detail: payable hours + exceptions', () => {
     expect(alice.exceptions.find((e: { kind: string; shiftId?: string }) => e.kind === 'MISSING_SESSION_TYPE').shiftId).toBe(shiftA.id);
   });
 
+  it('exposes employmentType per employee but it has zero effect on the payable-hours math', async () => {
+    const { agent } = await signupAdmin(app, { workspaceCode: 'PAY11' });
+    const subRow = await makeStaffSubRow(agent);
+    const ftEmployee = (await agent.post('/api/employees').send({ name: 'Fran Full', pin: '1111', employmentType: 'FT' })).body;
+    const ptEmployee = (await agent.post('/api/employees').send({ name: 'Pat Part', pin: '2222', employmentType: 'PT' })).body;
+    expect(ftEmployee.employmentType).toBe('FT');
+    expect(ptEmployee.employmentType).toBe('PT');
+
+    // Identical shifts for both employees — same overlap, same gap, same
+    // session type — so any difference in the resulting summary would mean
+    // employmentType leaked into the calculation.
+    for (const employeeId of [ftEmployee.id, ptEmployee.id]) {
+      await createAssignedShift(agent, { subRowId: subRow.id, date: '2026-09-01', startTime: '08:00', endTime: '12:00', employeeId, sessionType: 'Workout' });
+      await createAssignedShift(agent, { subRowId: subRow.id, date: '2026-09-01', startTime: '12:10', endTime: '16:00', employeeId, sessionType: 'Workout' });
+    }
+
+    const period = (await agent.post('/api/payroll/periods').send({ start: '2026-09-01', end: '2026-09-01' })).body;
+    const detail = (await agent.get(`/api/payroll/periods/${period.id}`)).body;
+
+    const fran = detail.employees.find((e: { employeeId: string }) => e.employeeId === ftEmployee.id);
+    const pat = detail.employees.find((e: { employeeId: string }) => e.employeeId === ptEmployee.id);
+    expect(fran.employmentType).toBe('FT');
+    expect(pat.employmentType).toBe('PT');
+
+    expect(fran.payableHours).toBe(pat.payableHours);
+    expect(fran.paidBreakHours).toBe(pat.paidBreakHours);
+    expect(fran.totalPayableHours).toBe(pat.totalPayableHours);
+    expect(fran.exceptions).toEqual([]);
+    expect(pat.exceptions).toEqual([]);
+    expect(fran.sessionTypeHours).toEqual(pat.sessionTypeHours);
+  });
+
   it('404s a period id that does not exist or belongs to another workspace', async () => {
     const { agent: a } = await signupAdmin(app, { workspaceCode: 'PAY10A' });
     const { agent: b } = await signupAdmin(app, { workspaceCode: 'PAY10B' });

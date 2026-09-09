@@ -1,7 +1,7 @@
 import { prisma } from '../db';
 import { PayrollPeriod } from '@prisma/client';
 import { computeDailyBreakdown, round2 } from './breakEngine';
-import { ExceptionKind, HIGH_HOURS_THRESHOLD, LOW_HOURS_THRESHOLD } from '../types';
+import { EmploymentType, ExceptionKind, HIGH_HOURS_THRESHOLD, LOW_HOURS_THRESHOLD } from '../types';
 
 export interface PayrollException {
   kind: ExceptionKind;
@@ -13,6 +13,7 @@ export interface PayrollException {
 export interface PayrollEmployeeSummary {
   employeeId: string;
   employeeName: string;
+  employmentType: EmploymentType;
   payableHours: number; // from non-cancelled shifts only
   paidBreakHours: number; // qualifying-gap portion of payableHours (see breakEngine.ts), broken out for the CSV export
   adjustmentHours: number; // sum of PayrollAdjustment.deltaMinutes for this employee+period, in hours
@@ -135,16 +136,18 @@ export async function getPayrollPeriodDetail(workspaceId: string, periodId: stri
   const assignments = await prisma.cellStaffAssignment.findMany({
     where: { employee: { workspaceId }, cellValue: { shift: { workspaceId, date: { gte: period.start, lte: period.end } } } },
     include: {
-      employee: { select: { id: true, name: true } },
+      employee: { select: { id: true, name: true, employmentType: true } },
       cellValue: { include: { shift: true } },
     },
   });
 
   const shiftsByEmployee = new Map<string, ShiftRow[]>();
   const employeeNames = new Map<string, string>();
+  const employeeTypes = new Map<string, EmploymentType>();
   for (const a of assignments) {
     const shift = a.cellValue.shift;
     employeeNames.set(a.employeeId, a.employee.name);
+    employeeTypes.set(a.employeeId, a.employee.employmentType as EmploymentType);
     if (!shiftsByEmployee.has(a.employeeId)) shiftsByEmployee.set(a.employeeId, []);
     shiftsByEmployee.get(a.employeeId)!.push({
       shiftId: shift.id,
@@ -167,8 +170,11 @@ export async function getPayrollPeriodDetail(workspaceId: string, periodId: stri
   const employeeIds = new Set([...shiftsByEmployee.keys(), ...adjustmentMinutesByEmployee.keys()]);
   const missingNames = [...employeeIds].filter((id) => !employeeNames.has(id));
   if (missingNames.length > 0) {
-    const extra = await prisma.employee.findMany({ where: { id: { in: missingNames }, workspaceId }, select: { id: true, name: true } });
-    for (const e of extra) employeeNames.set(e.id, e.name);
+    const extra = await prisma.employee.findMany({ where: { id: { in: missingNames }, workspaceId }, select: { id: true, name: true, employmentType: true } });
+    for (const e of extra) {
+      employeeNames.set(e.id, e.name);
+      employeeTypes.set(e.id, e.employmentType as EmploymentType);
+    }
   }
 
   const employees: PayrollEmployeeSummary[] = [];
@@ -178,6 +184,7 @@ export async function getPayrollPeriodDetail(workspaceId: string, periodId: stri
     employees.push({
       employeeId,
       employeeName: employeeNames.get(employeeId) ?? 'Unknown',
+      employmentType: employeeTypes.get(employeeId) ?? 'PT',
       payableHours,
       paidBreakHours,
       adjustmentHours,

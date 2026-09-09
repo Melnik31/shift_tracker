@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../db';
 import { requireRole } from '../middleware/auth';
 import { campusScopeFor } from '../lib/campusScope';
+import { EMPLOYMENT_TYPES } from '../types';
 
 const router = Router();
 // SENIOR_LEAD_INSTRUCTOR gets the same full-workspace-minus-campus access
@@ -14,6 +15,7 @@ function employeeSelect() {
     id: true,
     name: true,
     role: true,
+    employmentType: true,
     createdAt: true,
     campusId: true,
     campus: { select: { id: true, name: true } },
@@ -55,15 +57,18 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
   const scope = campusScopeFor(req);
-  const { name, role, pin, campusId: bodyCampusId } = req.body ?? {};
+  const { name, role, pin, employmentType, campusId: bodyCampusId } = req.body ?? {};
   if (!name || !pin) return res.status(400).json({ error: 'name and pin are required' });
   if (!/^\d{4}$/.test(pin)) return res.status(400).json({ error: 'pin must be exactly 4 digits' });
+  if (employmentType !== undefined && !EMPLOYMENT_TYPES.includes(employmentType)) {
+    return res.status(400).json({ error: `employmentType must be one of ${EMPLOYMENT_TYPES.join(', ')}` });
+  }
 
   if (scope.restricted && !scope.campusId) return res.status(404).json({ error: 'Campus not found' });
   const campusId = await resolveCampusIdForCreate(workspaceId, scope, bodyCampusId);
 
   const employee = await prisma.employee.create({
-    data: { workspaceId, name, role: role || 'Employee', pinHash: bcrypt.hashSync(pin, 10), campusId },
+    data: { workspaceId, name, role: role || 'Employee', employmentType: employmentType || 'PT', pinHash: bcrypt.hashSync(pin, 10), campusId },
     select: employeeSelect(),
   });
   res.status(201).json(employee);
@@ -81,8 +86,11 @@ router.patch('/:id', async (req, res) => {
   });
   if (!existing) return res.status(404).json({ error: 'Employee not found' });
 
-  const { name, role, pin, campusId: bodyCampusId } = req.body ?? {};
+  const { name, role, pin, employmentType, campusId: bodyCampusId } = req.body ?? {};
   if (pin && !/^\d{4}$/.test(pin)) return res.status(400).json({ error: 'pin must be exactly 4 digits' });
+  if (employmentType !== undefined && !EMPLOYMENT_TYPES.includes(employmentType)) {
+    return res.status(400).json({ error: `employmentType must be one of ${EMPLOYMENT_TYPES.join(', ')}` });
+  }
 
   let campusId: string | null | undefined;
   // Reassigning an Employee's Campus (as opposed to setting it at creation)
@@ -104,6 +112,7 @@ router.patch('/:id', async (req, res) => {
     data: {
       ...(name !== undefined ? { name } : {}),
       ...(role !== undefined ? { role } : {}),
+      ...(employmentType !== undefined ? { employmentType } : {}),
       ...(pin ? { pinHash: bcrypt.hashSync(pin, 10) } : {}),
       ...(campusId !== undefined ? { campusId } : {}),
     },

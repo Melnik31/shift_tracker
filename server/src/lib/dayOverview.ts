@@ -1,5 +1,6 @@
 import { prisma } from '../db';
 import { computeDailyBreakdown, round2, BreakEngineResult } from './breakEngine';
+import { EmploymentType } from '../types';
 
 export interface OverviewShift {
   shiftId: string;
@@ -23,6 +24,7 @@ export interface OverviewEmployee {
   id: string;
   name: string;
   role: string;
+  employmentType: EmploymentType;
   days: OverviewDay[];
   totalBreakdown: {
     activeHours: number;
@@ -126,7 +128,7 @@ export async function getWorkspaceRangeOverview(
 
   const byEmployee = new Map<
     string,
-    { employee: { id: string; name: string; role: string }; byDate: Map<string, OverviewShift[]> }
+    { employee: { id: string; name: string; role: string; employmentType: string }; byDate: Map<string, OverviewShift[]> }
   >();
 
   for (const a of assignments) {
@@ -175,7 +177,7 @@ export async function getWorkspaceRangeOverview(
     totalPaidBreak += totalBreakdown.paidBreakHours;
     totalBillable += totalBreakdown.billableHours;
 
-    employees.push({ id: employee.id, name: employee.name, role: employee.role, days, totalBreakdown });
+    employees.push({ id: employee.id, name: employee.name, role: employee.role, employmentType: employee.employmentType as EmploymentType, days, totalBreakdown });
   }
 
   employees.sort((a, b) => a.name.localeCompare(b.name));

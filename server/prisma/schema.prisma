@@ -135,6 +135,11 @@ model Employee {
   name        String
   pinHash     String
   role        String   @default("Employee")
+  // FT | PT — see EMPLOYMENT_TYPES in src/types.ts. Plain string, not a
+  // Prisma enum, same convention as role/dataType/statusValue elsewhere in
+  // this schema. Defaults to PT: this app was originally built around
+  // part-time hour tracking, so that's the existing real-world population.
+  employmentType String @default("PT")
   // Null = floats across every Campus in the workspace (visible/assignable
   // everywhere), same semantics as AdminUser.campusId. Set = "home" Campus;
   // a restricted DIRECTOR/SENIOR_LEAD_INSTRUCTOR creating an Employee always

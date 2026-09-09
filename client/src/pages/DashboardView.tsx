@@ -8,7 +8,7 @@ import { colorForEmployee, initials } from '../lib/colors';
 import { toMinutes, fromMinutes, formatHours, formatTime12h } from '../lib/time';
 import { OPERATIONAL_START, OPERATIONAL_END, SESSION_TYPE_COLORS } from '../lib/constants';
 import { DateRange, defaultDateRange } from '../lib/dateRange';
-import { OverviewEmployee, OverviewDay } from '../lib/types';
+import { EMPLOYMENT_TYPES, EmploymentType, OverviewEmployee, OverviewDay } from '../lib/types';
 
 const NO_TYPE_COLOR = '#94a3b8'; // slate-400, for shifts with no sessionType set
 const PAID_BREAK_COLOR = '#22c55e'; // green-500 — used for both real between-shift gaps and the ice-prep buffer below, since both are the same "paid, not on the clock" category
@@ -23,6 +23,7 @@ export default function DashboardView() {
   const [dateRange, setDateRange] = useState<DateRange>(defaultDateRange());
   const [search, setSearch] = useState('');
   const [campusId, setCampusId] = useState<string | null>(null);
+  const [employmentTypeFilter, setEmploymentTypeFilter] = useState<EmploymentType | null>(null);
   const [showNewShiftBlock, setShowNewShiftBlock] = useState(false);
   const { data } = useOverview(dateRange.start, dateRange.end, campusId);
 
@@ -30,10 +31,11 @@ export default function DashboardView() {
 
   const filteredEmployees = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const list = data?.employees ?? [];
+    let list = data?.employees ?? [];
+    if (employmentTypeFilter) list = list.filter((e) => e.employmentType === employmentTypeFilter);
     if (!term) return list;
     return list.filter((e) => e.name.toLowerCase().includes(term));
-  }, [data?.employees, search]);
+  }, [data?.employees, search, employmentTypeFilter]);
 
   // Legend reflects only what's actually shown below, not every possible
   // session type — an unused type (e.g. no one's scheduled Association today)
@@ -71,7 +73,23 @@ export default function DashboardView() {
         dateRange={dateRange}
         onDateRangeChange={setDateRange}
         showAddShiftButton={false}
-        filterExtra={<CampusSelector value={campusId} onChange={setCampusId} />}
+        filterExtra={
+          <>
+            <CampusSelector value={campusId} onChange={setCampusId} />
+            <select
+              value={employmentTypeFilter ?? ''}
+              onChange={(e) => setEmploymentTypeFilter((e.target.value || null) as EmploymentType | null)}
+              className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+            >
+              <option value="">All Types</option>
+              {EMPLOYMENT_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t === 'FT' ? 'Full-Time' : 'Part-Time'}
+                </option>
+              ))}
+            </select>
+          </>
+        }
         actionsExtra={
           <button
             onClick={() => setShowNewShiftBlock(true)}

@@ -9,7 +9,7 @@ import {
 } from '../hooks/usePayroll';
 import { colorForEmployee, initials } from '../lib/colors';
 import { formatHours } from '../lib/time';
-import { ExceptionKind, PayrollAdjustment, PayrollEmployeeSummary, PayrollPeriodReopen } from '../lib/types';
+import { EMPLOYMENT_TYPES, EmploymentType, ExceptionKind, PayrollAdjustment, PayrollEmployeeSummary, PayrollPeriodReopen } from '../lib/types';
 
 const EXCEPTION_LABELS: Record<ExceptionKind, string> = {
   MISSING_SESSION_TYPE: 'Missing type',
@@ -29,6 +29,7 @@ const EXCEPTION_COLORS: Record<ExceptionKind, string> = {
 
 export default function PayrollReview() {
   const [search, setSearch] = useState('');
+  const [employmentTab, setEmploymentTab] = useState<EmploymentType>('PT');
   const [periodId, setPeriodId] = useState<string | null>(null);
   const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
   const [adjustingEmployeeId, setAdjustingEmployeeId] = useState<string | null>(null);
@@ -49,10 +50,10 @@ export default function PayrollReview() {
 
   const filteredEmployees = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const list = detail?.employees ?? [];
+    const list = (detail?.employees ?? []).filter((e) => e.employmentType === employmentTab);
     if (!term) return list;
     return list.filter((e) => e.employeeName.toLowerCase().includes(term));
-  }, [detail?.employees, search]);
+  }, [detail?.employees, search, employmentTab]);
 
   async function handleCreatePeriod(e: FormEvent) {
     e.preventDefault();
@@ -165,6 +166,23 @@ export default function PayrollReview() {
               </div>
             </div>
 
+            <div className="flex gap-1 mb-4 border-b border-slate-200">
+              {EMPLOYMENT_TYPES.map((t) => {
+                const count = (detail?.employees ?? []).filter((e) => e.employmentType === t).length;
+                return (
+                  <button
+                    key={t}
+                    onClick={() => setEmploymentTab(t)}
+                    className={`px-3 py-1.5 text-sm font-medium border-b-2 -mb-px ${
+                      employmentTab === t ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600'
+                    }`}
+                  >
+                    {t === 'FT' ? 'Full-Time' : 'Part-Time'} ({count})
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm mb-6 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -194,7 +212,9 @@ export default function PayrollReview() {
                 </tbody>
               </table>
               {filteredEmployees.length === 0 && (
-                <p className="text-center text-sm text-slate-400 py-8">No employees with hours in this period.</p>
+                <p className="text-center text-sm text-slate-400 py-8">
+                  No {employmentTab === 'FT' ? 'full-time' : 'part-time'} employees with hours in this period.
+                </p>
               )}
             </div>
 

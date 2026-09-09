@@ -79,6 +79,39 @@ describe('employees CRUD', () => {
     const created = await agent.post('/api/employees').send({ name: 'No Role', pin: '1234' });
     expect(created.body.role).toBe('Employee');
   });
+
+  it('defaults employmentType to "PT" when omitted', async () => {
+    const { agent } = await signupAdmin(app);
+    const created = await agent.post('/api/employees').send({ name: 'No Type', pin: '1234' });
+    expect(created.body.employmentType).toBe('PT');
+  });
+
+  it('accepts an explicit employmentType of "FT"', async () => {
+    const { agent } = await signupAdmin(app);
+    const created = await agent.post('/api/employees').send({ name: 'Full Timer', pin: '1234', employmentType: 'FT' });
+    expect(created.body.employmentType).toBe('FT');
+  });
+
+  it('rejects an invalid employmentType on create and update', async () => {
+    const { agent } = await signupAdmin(app);
+    expect((await agent.post('/api/employees').send({ name: 'X', pin: '1234', employmentType: 'CONTRACTOR' })).status).toBe(400);
+
+    const created = await agent.post('/api/employees').send({ name: 'Y', pin: '5678' });
+    expect((await agent.patch(`/api/employees/${created.body.id}`).send({ employmentType: 'CONTRACTOR' })).status).toBe(400);
+  });
+
+  it('updates employmentType from PT to FT after creation', async () => {
+    const { agent } = await signupAdmin(app);
+    const created = await agent.post('/api/employees').send({ name: 'Z', pin: '1234' });
+    expect(created.body.employmentType).toBe('PT');
+
+    const patched = await agent.patch(`/api/employees/${created.body.id}`).send({ employmentType: 'FT' });
+    expect(patched.status).toBe(200);
+    expect(patched.body.employmentType).toBe('FT');
+
+    const listed = await agent.get('/api/employees');
+    expect(listed.body.employees.find((e: { id: string }) => e.id === created.body.id).employmentType).toBe('FT');
+  });
 });
 
 describe('employees role gating (requireRole DIRECTOR/ADMIN/CEO)', () => {

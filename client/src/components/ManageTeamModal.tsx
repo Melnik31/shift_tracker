@@ -1,9 +1,9 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 import { useEmployees, useEmployeeMutations } from '../hooks/useEmployees';
 import { useAdminMutations } from '../hooks/useAdmins';
 import { useCampuses } from '../hooks/useCampuses';
 import { useAuth } from '../hooks/useAuth';
-import { ASSIGNABLE_ADMIN_ROLES, AssignableAdminRole, CAMPUS_SCOPED_ROLES } from '../lib/types';
+import { ASSIGNABLE_ADMIN_ROLES, AssignableAdminRole, CAMPUS_SCOPED_ROLES, EMPLOYMENT_TYPES, EmploymentType } from '../lib/types';
 import Modal from './Modal';
 
 // Coach uses the existing PIN flow (Employee record). Director/SLI/Admin/CEO
@@ -43,15 +43,28 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
   const [name, setName] = useState('');
   const [employeeRole, setEmployeeRole] = useState('');
   const [pin, setPin] = useState('');
+  const [newEmploymentType, setNewEmploymentType] = useState<EmploymentType>('PT');
   const [email, setEmail] = useState('');
   const [tempPassword, setTempPassword] = useState('');
   const [campusId, setCampusId] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  // Which employment-type tab is showing. `null` until the user picks one
+  // explicitly — while null, the tab tracks whichever type actually has
+  // coaches (falling back to Part-Time), so a workspace that's all-FT or
+  // all-PT doesn't open on an empty list.
+  const [manualTab, setManualTab] = useState<EmploymentType | null>(null);
+  const employees = data?.employees ?? [];
+  const ptCount = employees.filter((e) => e.employmentType === 'PT').length;
+  const ftCount = employees.filter((e) => e.employmentType === 'FT').length;
+  const activeTab = manualTab ?? (ptCount === 0 && ftCount > 0 ? 'FT' : 'PT');
+  const visibleEmployees = useMemo(() => employees.filter((e) => e.employmentType === activeTab), [employees, activeTab]);
+
   function resetForm() {
     setName('');
     setEmployeeRole('');
     setPin('');
+    setNewEmploymentType('PT');
     setEmail('');
     setTempPassword('');
     setCampusId('');
@@ -67,7 +80,13 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
         return;
       }
       try {
-        await addEmployee.mutateAsync({ name, role: employeeRole || 'Employee', pin, ...(matrixCampusId ? { campusId: matrixCampusId } : {}) });
+        await addEmployee.mutateAsync({
+          name,
+          role: employeeRole || 'Employee',
+          pin,
+          employmentType: newEmploymentType,
+          ...(matrixCampusId ? { campusId: matrixCampusId } : {}),
+        });
         resetForm();
       } catch (err: any) {
         setError(err.message ?? 'Could not add employee');
@@ -95,8 +114,25 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
 
   return (
     <Modal title="Manage Team" onClose={onClose}>
+      <div className="flex gap-1 mb-3 border-b border-slate-200">
+        {EMPLOYMENT_TYPES.map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setManualTab(t)}
+            className={`px-3 py-1.5 text-sm font-medium border-b-2 -mb-px ${
+              activeTab === t ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            {t === 'FT' ? 'Full-Time' : 'Part-Time'} ({t === 'FT' ? ftCount : ptCount})
+          </button>
+        ))}
+      </div>
       <ul className="space-y-2 mb-6 max-h-64 overflow-y-auto">
-        {(data?.employees ?? []).map((emp) => (
+        {visibleEmployees.length === 0 && (
+          <li className="text-center text-sm text-slate-400 py-4">No {activeTab === 'FT' ? 'full-time' : 'part-time'} coaches yet.</li>
+        )}
+        {visibleEmployees.map((emp) => (
           <li key={emp.id} className="flex items-center justify-between border border-slate-200 rounded-md px-3 py-2">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -105,6 +141,18 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
                   defaultValue={emp.name}
                   onBlur={(e) => e.target.value !== emp.name && updateEmployee.mutate({ id: emp.id, name: e.target.value })}
                 />
+                <select
+                  value={emp.employmentType}
+                  onChange={(e) => updateEmployee.mutate({ id: emp.id, employmentType: e.target.value as EmploymentType })}
+                  title="Full-Time or Part-Time"
+                  className="text-[10px] uppercase tracking-wide text-slate-400 border-none bg-transparent focus:outline-none focus:ring-1 focus:ring-slate-300 rounded flex-shrink-0"
+                >
+                  {EMPLOYMENT_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t === 'FT' ? 'Full-Time' : 'Part-Time'}
+                    </option>
+                  ))}
+                </select>
                 {allCampuses.length > 1 &&
                   (canManageCampusAssignment ? (
                     <select
@@ -140,44 +188,63 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
       <form onSubmit={onAdd} className="border-t border-slate-200 pt-4">
         <h4 className="text-sm font-medium text-slate-600 mb-2">{accessLevel === 'COACH' ? 'Add Employee' : 'Add Admin'}</h4>
 
-        {canCreateAdmins && (
-          <select
-            value={accessLevel}
-            onChange={(e) => setAccessLevel(e.target.value as AccessLevel)}
-            className="w-full mb-2 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-          >
-            <option value="COACH">Coach</option>
-            {ASSIGNABLE_ADMIN_ROLES.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </select>
+        {(canCreateAdmins || accessLevel === 'COACH') && (
+          <div className="flex gap-2 mb-2">
+            {canCreateAdmins && (
+              <select
+                value={accessLevel}
+                onChange={(e) => setAccessLevel(e.target.value as AccessLevel)}
+                className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+              >
+                <option value="COACH">Coach</option>
+                {ASSIGNABLE_ADMIN_ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            )}
+            {accessLevel === 'COACH' && (
+              <select
+                value={newEmploymentType}
+                onChange={(e) => setNewEmploymentType(e.target.value as EmploymentType)}
+                className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+              >
+                {EMPLOYMENT_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t === 'FT' ? 'Full-Time' : 'Part-Time'}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         )}
 
         {accessLevel === 'COACH' ? (
-          <div className="flex gap-2 mb-2">
+          <div className="space-y-2 mb-2">
+            <div className="flex gap-2">
+              <input
+                className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                placeholder="Name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+              <input
+                className="w-20 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                placeholder="PIN"
+                inputMode="numeric"
+                maxLength={4}
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                required
+              />
+            </div>
             <input
-              className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-              placeholder="Name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-            <input
-              className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+              className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
               placeholder="Role (optional)"
               value={employeeRole}
               onChange={(e) => setEmployeeRole(e.target.value)}
-            />
-            <input
-              className="w-20 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-              placeholder="PIN"
-              inputMode="numeric"
-              maxLength={4}
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-              required
             />
           </div>
         ) : (

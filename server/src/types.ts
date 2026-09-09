@@ -15,6 +15,11 @@ export type StatusValue = (typeof STATUS_VALUES)[number];
 export const SESSION_TYPES = ['Ice Session', 'Skill Session', 'Workout', 'Association'] as const;
 export type SessionType = (typeof SESSION_TYPES)[number];
 
+// Employee.employmentType — tagging/filtering only (Manage Team, Payroll
+// Review tabs); has no effect on payroll calculation itself.
+export const EMPLOYMENT_TYPES = ['FT', 'PT'] as const;
+export type EmploymentType = (typeof EMPLOYMENT_TYPES)[number];
+
 // AdminUser.role. The Employee model (PIN login) has no role column of its
 // own — every employee session implicitly maps to COACH (see auth.ts).
 // ADMIN/CEO are unrestricted (every Campus in the workspace); DIRECTOR and
