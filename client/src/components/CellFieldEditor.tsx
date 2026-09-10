@@ -1,4 +1,5 @@
 import { DataType, Employee, StatusValue, STATUS_VALUES, CellValue } from '../lib/types';
+import { employeeVisibleOnStaffField } from '../lib/staffRoles';
 
 // Shared by CellPopover (editing an existing shift's cell) and
 // NewShiftBlockModal (composing several not-yet-created shifts at once) so
@@ -73,11 +74,16 @@ interface Props {
   state: CellFieldState;
   onChange: (next: CellFieldState) => void;
   employees: Employee[];
+  // The Staff sub-row's own label, plus every Staff-field label used
+  // anywhere in the workspace — together decide which employees show up as
+  // assignable options (see lib/staffRoles.ts's employeeVisibleOnStaffField).
+  subRowLabel?: string;
+  knownStaffLabels?: Set<string>;
   onKeyDown?: (e: React.KeyboardEvent) => void;
   autoFocus?: boolean;
 }
 
-export default function CellFieldEditor({ dataType, state, onChange, employees, onKeyDown, autoFocus }: Props) {
+export default function CellFieldEditor({ dataType, state, onChange, employees, subRowLabel, knownStaffLabels, onKeyDown, autoFocus }: Props) {
   switch (dataType) {
     case 'TEXT':
       return (
@@ -156,10 +162,13 @@ export default function CellFieldEditor({ dataType, state, onChange, employees, 
         </div>
       );
 
-    case 'STAFF':
+    case 'STAFF': {
+      const visibleEmployees = subRowLabel
+        ? employees.filter((e) => employeeVisibleOnStaffField(e.role, subRowLabel, knownStaffLabels ?? new Set()))
+        : employees;
       return (
         <div className="max-h-36 overflow-y-auto space-y-1">
-          {employees.map((emp) => (
+          {visibleEmployees.map((emp) => (
             <label key={emp.id} className="flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"
@@ -173,6 +182,7 @@ export default function CellFieldEditor({ dataType, state, onChange, employees, 
           ))}
         </div>
       );
+    }
 
     default:
       return null;

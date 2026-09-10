@@ -3,8 +3,12 @@ import { useEmployees, useEmployeeMutations } from '../hooks/useEmployees';
 import { useAdminMutations } from '../hooks/useAdmins';
 import { useCampuses } from '../hooks/useCampuses';
 import { useAuth } from '../hooks/useAuth';
+import { useLayout } from '../hooks/useLayout';
 import { ASSIGNABLE_ADMIN_ROLES, AssignableAdminRole, CAMPUS_SCOPED_ROLES, EMPLOYMENT_TYPES, EmploymentType } from '../lib/types';
+import { collectStaffFieldLabels } from '../lib/staffRoles';
 import Modal from './Modal';
+
+const STAFF_ROLE_SUGGESTIONS_ID = 'staff-role-suggestions';
 
 // Coach uses the existing PIN flow (Employee record). Director/SLI/Admin/CEO
 // use a new email + temp-password flow (AdminUser record, forced to change
@@ -30,6 +34,13 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
   const { addAdmin } = useAdminMutations();
   const { data: campusData } = useCampuses();
   const { data: me } = useAuth();
+  const { data: layoutData } = useLayout();
+
+  // Suggests role text that actually matches a real Staff field somewhere in
+  // the layout — a role only filters which Staff-assignment checkboxes an
+  // employee shows up on (see CellFieldEditor) when it exactly matches a
+  // field's label, so keeping the two in sync avoids silent typo mismatches.
+  const staffFieldLabels = useMemo(() => [...collectStaffFieldLabels(layoutData?.sections ?? [])].sort(), [layoutData]);
   // A Director/SLI can already open Manage Team, but creating Director/SLI/
   // Admin/CEO accounts — and reassigning an Employee's campus — is
   // server-side ADMIN/CEO-only; hide those controls for anyone who'd just
@@ -114,6 +125,11 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
 
   return (
     <Modal title="Manage Team" onClose={onClose}>
+      <datalist id={STAFF_ROLE_SUGGESTIONS_ID}>
+        {staffFieldLabels.map((label) => (
+          <option key={label} value={label} />
+        ))}
+      </datalist>
       <div className="flex gap-1 mb-3 border-b border-slate-200">
         {EMPLOYMENT_TYPES.map((t) => (
           <button
@@ -173,8 +189,10 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
                   ))}
               </div>
               <input
-                className="block text-xs text-slate-500 border-none focus:outline-none focus:ring-1 focus:ring-slate-300 rounded px-1"
+                className="block text-xs text-slate-500 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-300 rounded px-1.5 py-0.5 mt-1"
                 defaultValue={emp.role}
+                placeholder="+ Add role"
+                list={STAFF_ROLE_SUGGESTIONS_ID}
                 onBlur={(e) => e.target.value !== emp.role && updateEmployee.mutate({ id: emp.id, role: e.target.value })}
               />
             </div>
@@ -243,6 +261,7 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
             <input
               className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
               placeholder="Role (optional)"
+              list={STAFF_ROLE_SUGGESTIONS_ID}
               value={employeeRole}
               onChange={(e) => setEmployeeRole(e.target.value)}
             />

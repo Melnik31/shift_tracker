@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 import Modal from './Modal';
 import CellFieldEditor, {
   CellFieldState,
@@ -13,6 +13,7 @@ import { useShifts } from '../hooks/useShifts';
 import { api } from '../lib/api';
 import { Shift, SESSION_TYPES, SubRow } from '../lib/types';
 import { DATA_TYPE_INFO } from '../lib/constants';
+import { collectStaffFieldLabels } from '../lib/staffRoles';
 
 function timeRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
   return aStart < bEnd && bStart < aEnd;
@@ -47,6 +48,7 @@ export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSa
   const subRows = location?.subRows ?? [];
   const employees = employeesData?.employees ?? [];
   const shifts = shiftsData?.shifts ?? [];
+  const knownStaffLabels = useMemo(() => collectStaffFieldLabels(layout?.sections ?? []), [layout]);
 
   const blockStart = shift.startTime;
   const blockEnd = shift.endTime;
@@ -267,7 +269,14 @@ export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSa
                     />
                   </div>
                 ) : (
-                  <CellFieldEditor dataType={sr.dataType} state={rowState(sr.id)} onChange={(next) => setRowState(sr.id, next)} employees={employees} />
+                  <CellFieldEditor
+                    dataType={sr.dataType}
+                    state={rowState(sr.id)}
+                    onChange={(next) => setRowState(sr.id, next)}
+                    employees={employees}
+                    subRowLabel={sr.label}
+                    knownStaffLabels={knownStaffLabels}
+                  />
                 )}
               </div>
             );

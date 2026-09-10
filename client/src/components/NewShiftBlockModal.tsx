@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 import Modal from './Modal';
 import CellFieldEditor, { CellFieldState, cellFieldPayload, emptyCellFieldState, isCellFieldStateFilled } from './CellFieldEditor';
 import { useLayout } from '../hooks/useLayout';
@@ -7,6 +7,7 @@ import { useShifts, useBulkShiftMutation } from '../hooks/useShifts';
 import { api } from '../lib/api';
 import { BulkShiftRow, SESSION_TYPES } from '../lib/types';
 import { DATA_TYPE_INFO } from '../lib/constants';
+import { collectStaffFieldLabels } from '../lib/staffRoles';
 
 function timeRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
   return aStart < bEnd && bStart < aEnd;
@@ -43,6 +44,7 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
   const subRows = location?.subRows ?? [];
   const employees = employeesData?.employees ?? [];
   const shifts = shiftsData?.shifts ?? [];
+  const knownStaffLabels = useMemo(() => collectStaffFieldLabels(layout?.sections ?? []), [layout]);
 
   function conflictFor(subRowId: string) {
     return shifts.some((s) => s.subRowId === subRowId && timeRangesOverlap(s.startTime, s.endTime, startTime, endTime));
@@ -241,7 +243,14 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
                       className="text-xs"
                     />
                   ) : (
-                    <CellFieldEditor dataType={sr.dataType} state={rowState(sr.id)} onChange={(next) => setRowState(sr.id, next)} employees={employees} />
+                    <CellFieldEditor
+                      dataType={sr.dataType}
+                      state={rowState(sr.id)}
+                      onChange={(next) => setRowState(sr.id, next)}
+                      employees={employees}
+                      subRowLabel={sr.label}
+                      knownStaffLabels={knownStaffLabels}
+                    />
                   )}
                 </div>
               );
