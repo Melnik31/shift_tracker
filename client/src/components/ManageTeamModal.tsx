@@ -188,13 +188,42 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
                     <span className="text-[10px] uppercase tracking-wide text-slate-400 flex-shrink-0">{emp.campus?.name ?? 'Floating'}</span>
                   ))}
               </div>
-              <input
-                className="block text-xs text-slate-500 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-300 rounded px-1.5 py-0.5 mt-1"
-                defaultValue={emp.role}
-                placeholder="+ Add role"
-                list={STAFF_ROLE_SUGGESTIONS_ID}
-                onBlur={(e) => e.target.value !== emp.role && updateEmployee.mutate({ id: emp.id, role: e.target.value })}
-              />
+              <span className="flex items-center gap-1 mt-1">
+                <input
+                  className="block text-xs text-slate-500 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-300 rounded px-1.5 py-0.5 w-32"
+                  defaultValue={emp.role}
+                  placeholder="+ Add role"
+                  list={STAFF_ROLE_SUGGESTIONS_ID}
+                  // Browsers only show datalist suggestions that start with
+                  // the field's current text — an existing generic role
+                  // like "Coach" doesn't start with "Skater Coach", so every
+                  // suggestion would silently disappear the moment someone
+                  // tries to change it. Clearing on focus keeps the full
+                  // suggestion list available; a blank blur reverts rather
+                  // than saves, since that's ambiguous with "clicked in and
+                  // back out without picking anything" — the ✕ button below
+                  // is the explicit way to actually remove a role.
+                  onFocus={(e) => (e.target.value = '')}
+                  onBlur={(e) => {
+                    const next = e.target.value.trim();
+                    if (!next) {
+                      e.target.value = emp.role;
+                      return;
+                    }
+                    if (next !== emp.role) updateEmployee.mutate({ id: emp.id, role: next });
+                  }}
+                />
+                {emp.role && (
+                  <button
+                    type="button"
+                    title="Remove role"
+                    onClick={() => updateEmployee.mutate({ id: emp.id, role: '' })}
+                    className="text-slate-300 hover:text-red-500 text-xs leading-none"
+                  >
+                    ✕
+                  </button>
+                )}
+              </span>
             </div>
             <button onClick={() => deleteEmployee.mutate(emp.id)} className="text-xs text-red-500 hover:underline">
               Remove
