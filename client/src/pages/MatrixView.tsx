@@ -133,12 +133,6 @@ export default function MatrixView() {
         }
         actionsExtra={
           <>
-            <button
-              onClick={() => setShowNewShiftBlock(true)}
-              className="rounded-md bg-slate-900 text-white px-3 py-1.5 text-sm font-medium hover:bg-slate-700"
-            >
-              + New Shift Block
-            </button>
             <ManageMenu
               items={[
                 { label: 'Manage Layout', onClick: () => setShowManageLayout(true) },
@@ -266,6 +260,14 @@ export default function MatrixView() {
           </div>
         )}
       </div>
+
+      <button
+        onClick={() => setShowNewShiftBlock(true)}
+        title="New Shift Block"
+        className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-slate-900 text-white text-2xl font-light shadow-lg hover:bg-slate-700 flex items-center justify-center"
+      >
+        +
+      </button>
 
       {editingBlock && (
         <EditShiftBlockModal

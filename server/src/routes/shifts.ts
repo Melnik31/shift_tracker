@@ -98,8 +98,10 @@ router.post('/', async (req, res) => {
 // sessionType shared across every SubRow under a Location, but one
 // Shift+CellValue created per SubRow that actually had something entered.
 // Rows are skipped (never overwritten) when the SubRow isn't in this
-// workspace, nothing was entered, or a shift already overlaps that window
-// on that SubRow — reported back per row rather than failing the request.
+// workspace or nothing was entered — reported back per row rather than
+// failing the request. Overlapping an existing shift on the same SubRow is
+// allowed (e.g. a genuinely double-booked coach) — payroll review still
+// flags it as an OVERLAPPING_SHIFTS exception for human review.
 router.post('/bulk', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
   const scope = campusScopeFor(req);
@@ -132,14 +134,6 @@ router.post('/bulk', async (req, res) => {
     }
     if (row.statusValue !== undefined && row.statusValue !== null && row.statusValue !== '' && !STATUS_VALUES.includes(row.statusValue)) {
       skipped.push({ subRowId, reason: `statusValue must be one of ${STATUS_VALUES.join(', ')}` });
-      continue;
-    }
-
-    const conflict = await prisma.shift.findFirst({
-      where: { workspaceId, subRowId, date, startTime: { lt: endTime }, endTime: { gt: startTime } },
-    });
-    if (conflict) {
-      skipped.push({ subRowId, reason: 'Already scheduled' });
       continue;
     }
 

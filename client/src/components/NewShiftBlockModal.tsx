@@ -1,5 +1,5 @@
 import { FormEvent, useMemo, useState } from 'react';
-import Modal from './Modal';
+import SidePanel from './SidePanel';
 import CellFieldEditor, { CellFieldState, cellFieldPayload, emptyCellFieldState, isCellFieldStateFilled } from './CellFieldEditor';
 import { useLayout } from '../hooks/useLayout';
 import { useEmployees } from '../hooks/useEmployees';
@@ -8,6 +8,7 @@ import { api } from '../lib/api';
 import { BulkShiftRow, SESSION_TYPES } from '../lib/types';
 import { DATA_TYPE_INFO } from '../lib/constants';
 import { collectStaffFieldLabels } from '../lib/staffRoles';
+import { toMinutes, fromMinutes } from '../lib/time';
 
 function timeRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
   return aStart < bEnd && bStart < aEnd;
@@ -50,6 +51,13 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
     return shifts.some((s) => s.subRowId === subRowId && timeRangesOverlap(s.startTime, s.endTime, startTime, endTime));
   }
 
+  // Defaults End to an hour after whatever Start the user just picked —
+  // clamped so a late start (e.g. 23:30) can't produce an invalid "24:30".
+  function handleStartTimeChange(value: string) {
+    setStartTime(value);
+    setEndTime(fromMinutes(Math.min(toMinutes(value) + 60, 23 * 60 + 59)));
+  }
+
   function rowState(subRowId: string) {
     return rowStates[subRowId] ?? emptyCellFieldState();
   }
@@ -71,7 +79,6 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
 
     const rows: BulkShiftRow[] = [];
     for (const sr of subRows) {
-      if (conflictFor(sr.id)) continue;
       if (sr.dataType === 'FILE') {
         if (rowFiles[sr.id]) rows.push({ subRowId: sr.id, hasFile: true });
         continue;
@@ -107,7 +114,7 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
 
   if (result) {
     return (
-      <Modal title="New Shift Block" onClose={onClose}>
+      <SidePanel title="New Shift Block" onClose={onClose}>
         <p className="text-sm text-slate-700 mb-2">
           Created {result.createdCount} shift{result.createdCount === 1 ? '' : 's'}.
         </p>
@@ -131,12 +138,12 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
             Done
           </button>
         </div>
-      </Modal>
+      </SidePanel>
     );
   }
 
   return (
-    <Modal title="New Shift Block" onClose={onClose}>
+    <SidePanel title="New Shift Block" onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
           <label className="block text-xs font-medium text-slate-500 mb-1">Section</label>
@@ -189,7 +196,7 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
             <input
               type="time"
               value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
+              onChange={(e) => handleStartTimeChange(e.target.value)}
               className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
             />
           </div>
@@ -234,9 +241,8 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
                       {DATA_TYPE_INFO[sr.dataType].label}
                     </span>
                   </div>
-                  {conflict ? (
-                    <p className="text-xs text-amber-700">Already scheduled at this time — skipped</p>
-                  ) : sr.dataType === 'FILE' ? (
+                  {conflict && <p className="text-xs text-amber-700 mb-2">Already scheduled at this time — creating this will overlap it</p>}
+                  {sr.dataType === 'FILE' ? (
                     <input
                       type="file"
                       onChange={(e) => setRowFiles((prev) => ({ ...prev, [sr.id]: e.target.files?.[0] ?? null }))}
@@ -270,6 +276,6 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
           </button>
         </div>
       </form>
-    </Modal>
+    </SidePanel>
   );
 }

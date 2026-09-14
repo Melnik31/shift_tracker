@@ -279,7 +279,7 @@ describe('bulk shift creation (New Shift Block)', () => {
     expect(shifts).toHaveLength(2);
   });
 
-  it('excludes a row from creation when a shift already overlaps that date/time on that SubRow, without touching the existing one', async () => {
+  it('allows creating a shift that overlaps an existing one on the same SubRow, without touching the existing one', async () => {
     const { agent } = await signupAdmin(app);
     const { status, text } = await makeBlockLocation(agent);
 
@@ -292,7 +292,7 @@ describe('bulk shift creation (New Shift Block)', () => {
     const res = await agent.post('/api/shifts/bulk').send({
       date: '2026-09-01',
       startTime: '09:00',
-      endTime: '17:00', // overlaps the existing 10:00-11:00 shift on `status`
+      endTime: '17:00', // overlaps the existing 10:00-11:00 shift on `status` — allowed, e.g. a genuinely double-booked coach
       rows: [
         { subRowId: status.id, statusValue: 'SCHEDULED' },
         { subRowId: text.id, textValue: 'Fine, no conflict here' },
@@ -300,15 +300,19 @@ describe('bulk shift creation (New Shift Block)', () => {
     });
 
     expect(res.status).toBe(201);
-    expect(res.body.created.map((c: { subRowId: string }) => c.subRowId)).toEqual([text.id]);
-    expect(res.body.skipped).toEqual([{ subRowId: status.id, reason: 'Already scheduled' }]);
+    expect(res.body.created.map((c: { subRowId: string }) => c.subRowId)).toEqual([status.id, text.id]);
+    expect(res.body.skipped).toEqual([]);
 
-    // The pre-existing shift on `status` was never overwritten.
+    // The pre-existing shift on `status` was never overwritten — the new
+    // overlapping shift is a separate record alongside it.
     const shifts = (await agent.get('/api/shifts').query({ date: '2026-09-01' })).body.shifts;
-    const statusShift = shifts.find((s: { subRowId: string }) => s.subRowId === status.id);
-    expect(statusShift.startTime).toBe('10:00');
-    expect(statusShift.cellValues[0].statusValue).toBe('IN_PROGRESS');
-    expect(shifts).toHaveLength(2); // the untouched existing one + the new text shift
+    const statusShifts = shifts.filter((s: { subRowId: string }) => s.subRowId === status.id);
+    expect(statusShifts).toHaveLength(2);
+    const untouched = statusShifts.find((s: { startTime: string }) => s.startTime === '10:00');
+    expect(untouched.cellValues[0].statusValue).toBe('IN_PROGRESS');
+    const created = statusShifts.find((s: { startTime: string }) => s.startTime === '09:00');
+    expect(created.cellValues[0].statusValue).toBe('SCHEDULED');
+    expect(shifts).toHaveLength(3); // untouched status + new overlapping status + new text
   });
 
   it('gives every created shift the same date/startTime/endTime/sessionType', async () => {
