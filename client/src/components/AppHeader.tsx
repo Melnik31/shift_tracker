@@ -46,7 +46,7 @@ export default function AppHeader({
   return (
     <header className="bg-white border-b border-slate-200">
       {/* Row 1: identity — brand, primary nav, sign-out. Never competes with filters/actions below it. */}
-      <div className="px-6 py-3 flex items-center gap-6 border-b border-slate-100">
+      <div className="px-6 py-3 flex items-center gap-4 flex-wrap border-b border-slate-100">
         <div>
           <h1 className="text-lg font-bold text-slate-800 tracking-tight">{me?.workspace.name}</h1>
           <p className="text-xs text-slate-400">code: {me?.workspace.workspaceCode}</p>
