@@ -37,6 +37,15 @@ const isProduction = process.env.NODE_ENV === 'production';
 export function createApp() {
   const app = express();
 
+  // A real SESSION_SECRET is what makes session cookies unforgeable — the
+  // 'dev-secret-change-me' fallback below is fine for local dev, but
+  // silently running production on that same guessable default would mean
+  // anyone could forge a valid session cookie. Fail loudly at startup
+  // instead of ever letting that happen quietly.
+  if (isProduction && !process.env.SESSION_SECRET) {
+    throw new Error('SESSION_SECRET must be set in production — refusing to start with an insecure default.');
+  }
+
   // Render (and most hosting platforms) terminate HTTPS at a proxy/edge
   // layer and forward plain HTTP internally — without this, Express sees
   // every request as insecure, and express-session's cookie.secure=true
