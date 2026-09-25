@@ -144,7 +144,7 @@ export default function DashboardView() {
               <div>
                 <p className="font-medium">{singleSearchMatch.name}</p>
                 <p className="text-xs text-slate-300">
-                  {singleSearchMatch.role} · totals for {periodLabel}
+                  {singleSearchMatch.roles.join(', ')} · totals for {periodLabel}
                 </p>
               </div>
             </div>
@@ -334,7 +334,7 @@ function EmployeeRow({ employee, isMultiDay }: { employee: OverviewEmployee; isM
           </span>
           <div className="min-w-0">
             <p className="font-medium text-slate-800 truncate">{employee.name}</p>
-            <p className="text-xs text-slate-400 truncate">{employee.role}</p>
+            <p className="text-xs text-slate-400 truncate">{employee.roles.join(', ')}</p>
           </div>
         </div>
       </td>

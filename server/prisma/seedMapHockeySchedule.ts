@@ -254,6 +254,7 @@ async function main() {
   const existingEmployees = await prisma.employee.findMany({ where: { workspaceId: workspace.id }, select: { id: true } });
   const existingEmployeeIds = existingEmployees.map((e) => e.id);
   await prisma.cellStaffAssignment.deleteMany({ where: { employeeId: { in: existingEmployeeIds } } });
+  await prisma.employeeCampus.deleteMany({ where: { employeeId: { in: existingEmployeeIds } } });
   await prisma.payrollAdjustment.deleteMany({ where: { workspaceId: workspace.id } });
   const deletedEmployees = await prisma.employee.deleteMany({ where: { workspaceId: workspace.id } });
   console.log(`  removed ${deletedEmployees.count} existing employees`);
@@ -277,7 +278,7 @@ async function main() {
   for (let i = 0; i < EMPLOYEE_NAMES.length; i++) {
     const name = EMPLOYEE_NAMES[i];
     const emp = await prisma.employee.create({
-      data: { workspaceId: workspace.id, name, role: 'Coach', pinHash: bcrypt.hashSync(String(7001 + i), 10) },
+      data: { workspaceId: workspace.id, name, roles: ['Coach'], pinHash: bcrypt.hashSync(String(7001 + i), 10) },
     });
     employeeIdByName.set(name, emp.id);
   }

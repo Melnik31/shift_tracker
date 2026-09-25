@@ -2,7 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../db';
 import { requireRole } from '../middleware/auth';
-import { campusScopeFor } from '../lib/campusScope';
+import { campusScopeFor, employeeCampusMatch } from '../lib/campusScope';
 import { EMPLOYMENT_TYPES } from '../types';
 
 const router = Router();
@@ -14,64 +14,96 @@ function employeeSelect() {
   return {
     id: true,
     name: true,
-    role: true,
+    roles: true,
     employmentType: true,
     createdAt: true,
-    campusId: true,
-    campus: { select: { id: true, name: true } },
+    campuses: { select: { campus: { select: { id: true, name: true } } } },
   } as const;
 }
 
-// Resolves which Campus a new Employee belongs to. Mirrors
+// employeeSelect()'s shape nests campus memberships one level deeper than
+// the wire format the client expects (campuses: [{campus:{id,name}}] vs.
+// campuses: [{id,name}]) — flatten it here so every response (create,
+// update, list) goes through one place.
+function serializeEmployee<T extends { campuses: { campus: { id: string; name: string } }[] }>(employee: T) {
+  return { ...employee, campuses: employee.campuses.map((c) => c.campus) };
+}
+
+// Resolves which Campuses a new Employee belongs to. Mirrors
 // routes/layout.ts's resolveCampusIdForCreate, but unlike a Section an
-// Employee can legitimately have no Campus at all ("floats" across every
-// Campus — see the schema comment on Employee.campusId) — so, unlike
-// Sections, an unrestricted caller who omits campusId gets `null` here,
-// not a default-campus fallback.
-async function resolveCampusIdForCreate(workspaceId: string, scope: ReturnType<typeof campusScopeFor>, bodyCampusId: unknown) {
-  if (scope.restricted) return scope.campusId; // null (unassigned Director/SLI) falls through to the 404 below
-  if (typeof bodyCampusId === 'string' && bodyCampusId) {
-    const campus = await prisma.campus.findFirst({ where: { id: bodyCampusId, workspaceId } });
-    return campus?.id ?? null;
-  }
-  return null;
+// Employee can legitimately belong to zero Campuses ("floats" across every
+// Campus — see the schema comment on Employee.campuses) — so, unlike
+// Sections, an unrestricted caller who omits campusIds gets `[]` here, not a
+// default-campus fallback. A restricted Director/SLI always gets exactly
+// their own single Campus, ignoring the request body entirely.
+async function resolveCampusIdsForCreate(workspaceId: string, scope: ReturnType<typeof campusScopeFor>, bodyCampusIds: unknown): Promise<string[]> {
+  if (scope.restricted) return scope.campusId ? [scope.campusId] : []; // null (unassigned Director/SLI) falls through to the 404 below
+  if (!Array.isArray(bodyCampusIds) || bodyCampusIds.length === 0) return [];
+  const ids = [...new Set(bodyCampusIds.filter((id): id is string => typeof id === 'string' && id.length > 0))];
+  const found = await prisma.campus.findMany({ where: { id: { in: ids }, workspaceId }, select: { id: true } });
+  if (found.length !== ids.length) throw new Error('INVALID_CAMPUS_IDS');
+  return ids;
+}
+
+function cleanRoles(roles: unknown): string[] {
+  if (!Array.isArray(roles)) throw new Error('INVALID_ROLES');
+  if (!roles.every((r) => typeof r === 'string')) throw new Error('INVALID_ROLES');
+  return [...new Set(roles.map((r) => r.trim()).filter(Boolean))];
 }
 
 // GET /api/employees — narrowed to the caller's Campus plus every floating
-// (campusId: null) Employee when restricted; ADMIN/CEO see everyone, or can
-// narrow with ?campusId= (folded into `scope` by campusScopeFor).
+// Employee when restricted; ADMIN/CEO see everyone, or can narrow with
+// ?campusId= (folded into `scope` by campusScopeFor).
 router.get('/', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
   const scope = campusScopeFor(req);
   const employees = await prisma.employee.findMany({
     where: {
       workspaceId,
-      ...(scope.restricted ? { OR: [{ campusId: scope.campusId }, { campusId: null }] } : {}),
+      ...(scope.restricted ? employeeCampusMatch(scope.campusId) : {}),
     },
     orderBy: { name: 'asc' },
     select: employeeSelect(),
   });
-  res.json({ employees });
+  res.json({ employees: employees.map(serializeEmployee) });
 });
 
 router.post('/', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
   const scope = campusScopeFor(req);
-  const { name, role, pin, employmentType, campusId: bodyCampusId } = req.body ?? {};
+  const { name, roles, pin, employmentType, campusIds: bodyCampusIds } = req.body ?? {};
   if (!name || !pin) return res.status(400).json({ error: 'name and pin are required' });
   if (!/^\d{4}$/.test(pin)) return res.status(400).json({ error: 'pin must be exactly 4 digits' });
   if (employmentType !== undefined && !EMPLOYMENT_TYPES.includes(employmentType)) {
     return res.status(400).json({ error: `employmentType must be one of ${EMPLOYMENT_TYPES.join(', ')}` });
   }
+  let parsedRoles: string[];
+  try {
+    parsedRoles = roles !== undefined ? cleanRoles(roles) : [];
+  } catch {
+    return res.status(400).json({ error: 'roles must be an array of strings' });
+  }
 
   if (scope.restricted && !scope.campusId) return res.status(404).json({ error: 'Campus not found' });
-  const campusId = await resolveCampusIdForCreate(workspaceId, scope, bodyCampusId);
+  let campusIds: string[];
+  try {
+    campusIds = await resolveCampusIdsForCreate(workspaceId, scope, bodyCampusIds);
+  } catch {
+    return res.status(400).json({ error: 'One or more campusIds are invalid' });
+  }
 
   const employee = await prisma.employee.create({
-    data: { workspaceId, name, role: role || 'Employee', employmentType: employmentType || 'PT', pinHash: bcrypt.hashSync(pin, 10), campusId },
+    data: {
+      workspaceId,
+      name,
+      roles: parsedRoles,
+      employmentType: employmentType || 'PT',
+      pinHash: bcrypt.hashSync(pin, 10),
+      campuses: { create: campusIds.map((campusId) => ({ campusId })) },
+    },
     select: employeeSelect(),
   });
-  res.status(201).json(employee);
+  res.status(201).json(serializeEmployee(employee));
 });
 
 router.patch('/:id', async (req, res) => {
@@ -81,44 +113,55 @@ router.patch('/:id', async (req, res) => {
     where: {
       id: req.params.id,
       workspaceId,
-      ...(scope.restricted ? { OR: [{ campusId: scope.campusId }, { campusId: null }] } : {}),
+      ...(scope.restricted ? employeeCampusMatch(scope.campusId) : {}),
     },
   });
   if (!existing) return res.status(404).json({ error: 'Employee not found' });
 
-  const { name, role, pin, employmentType, campusId: bodyCampusId } = req.body ?? {};
+  const { name, roles, pin, employmentType, campusIds: bodyCampusIds } = req.body ?? {};
   if (pin && !/^\d{4}$/.test(pin)) return res.status(400).json({ error: 'pin must be exactly 4 digits' });
   if (employmentType !== undefined && !EMPLOYMENT_TYPES.includes(employmentType)) {
     return res.status(400).json({ error: `employmentType must be one of ${EMPLOYMENT_TYPES.join(', ')}` });
   }
-
-  let campusId: string | null | undefined;
-  // Reassigning an Employee's Campus (as opposed to setting it at creation)
-  // is ADMIN/CEO-only — same tier as moving a Section between Campuses.
-  if (bodyCampusId !== undefined) {
-    if (scope.restricted) return res.status(400).json({ error: 'Only Admin/CEO can move an employee between campuses' });
-    if (bodyCampusId === null) {
-      campusId = null;
-    } else {
-      const campus = await prisma.campus.findFirst({ where: { id: bodyCampusId, workspaceId } });
-      if (!campus) return res.status(404).json({ error: 'Campus not found' });
-      if (!campus.active) return res.status(400).json({ error: 'Cannot move an employee to an inactive campus' });
-      campusId = campus.id;
+  let parsedRoles: string[] | undefined;
+  if (roles !== undefined) {
+    try {
+      parsedRoles = cleanRoles(roles);
+    } catch {
+      return res.status(400).json({ error: 'roles must be an array of strings' });
     }
+  }
+
+  let campusIds: string[] | undefined;
+  // Reassigning an Employee's Campuses (as opposed to setting them at
+  // creation) is ADMIN/CEO-only — same tier as moving a Section between
+  // Campuses.
+  if (bodyCampusIds !== undefined) {
+    if (scope.restricted) return res.status(400).json({ error: 'Only Admin/CEO can move an employee between campuses' });
+    if (!Array.isArray(bodyCampusIds)) return res.status(400).json({ error: 'campusIds must be an array' });
+    const ids = [...new Set(bodyCampusIds.filter((id): id is string => typeof id === 'string' && id.length > 0))];
+    if (ids.length > 0) {
+      const campusesFound = await prisma.campus.findMany({ where: { id: { in: ids }, workspaceId } });
+      if (campusesFound.length !== ids.length) return res.status(404).json({ error: 'Campus not found' });
+      const existingCampusIds = new Set((await prisma.employeeCampus.findMany({ where: { employeeId: existing.id } })).map((c) => c.campusId));
+      const newlyAdded = campusesFound.filter((c) => !existingCampusIds.has(c.id));
+      if (newlyAdded.some((c) => !c.active)) return res.status(400).json({ error: 'Cannot move an employee to an inactive campus' });
+    }
+    campusIds = ids;
   }
 
   const employee = await prisma.employee.update({
     where: { id: existing.id },
     data: {
       ...(name !== undefined ? { name } : {}),
-      ...(role !== undefined ? { role } : {}),
+      ...(parsedRoles !== undefined ? { roles: parsedRoles } : {}),
       ...(employmentType !== undefined ? { employmentType } : {}),
       ...(pin ? { pinHash: bcrypt.hashSync(pin, 10) } : {}),
-      ...(campusId !== undefined ? { campusId } : {}),
+      ...(campusIds !== undefined ? { campuses: { deleteMany: {}, create: campusIds.map((campusId) => ({ campusId })) } } : {}),
     },
     select: employeeSelect(),
   });
-  res.json(employee);
+  res.json(serializeEmployee(employee));
 });
 
 router.delete('/:id', async (req, res) => {
@@ -128,12 +171,13 @@ router.delete('/:id', async (req, res) => {
     where: {
       id: req.params.id,
       workspaceId,
-      ...(scope.restricted ? { OR: [{ campusId: scope.campusId }, { campusId: null }] } : {}),
+      ...(scope.restricted ? employeeCampusMatch(scope.campusId) : {}),
     },
   });
   if (!existing) return res.status(404).json({ error: 'Employee not found' });
 
   await prisma.cellStaffAssignment.deleteMany({ where: { employeeId: existing.id } });
+  await prisma.employeeCampus.deleteMany({ where: { employeeId: existing.id } });
   await prisma.employee.delete({ where: { id: existing.id } });
   res.json({ ok: true });
 });

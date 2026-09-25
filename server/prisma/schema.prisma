@@ -59,10 +59,10 @@ model Campus {
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())
 
-  workspace  Workspace   @relation(fields: [workspaceId], references: [id])
-  sections   Section[]
-  adminUsers AdminUser[]
-  employees  Employee[]
+  workspace        Workspace        @relation(fields: [workspaceId], references: [id])
+  sections         Section[]
+  adminUsers       AdminUser[]
+  employeeCampuses EmployeeCampus[]
 
   @@index([workspaceId])
 }
@@ -134,25 +134,48 @@ model Employee {
   workspaceId String
   name        String
   pinHash     String
-  role        String   @default("Employee")
+  // Free-text job titles, e.g. "Skater Coach" — plain strings, not an FK to
+  // any Role entity (same convention as dataType/statusValue elsewhere in
+  // this schema). Empty array = no declared role, unrestricted (see
+  // lib/staffRoles.ts's employeeVisibleOnStaffField). Multiple entries let
+  // one employee be assignable on several differently-labeled Staff fields.
+  roles       String[] @default([])
   // FT | PT — see EMPLOYMENT_TYPES in src/types.ts. Plain string, not a
   // Prisma enum, same convention as role/dataType/statusValue elsewhere in
   // this schema. Defaults to PT: this app was originally built around
   // part-time hour tracking, so that's the existing real-world population.
   employmentType String @default("PT")
-  // Null = floats across every Campus in the workspace (visible/assignable
-  // everywhere), same semantics as AdminUser.campusId. Set = "home" Campus;
-  // a restricted DIRECTOR/SENIOR_LEAD_INSTRUCTOR creating an Employee always
-  // gets their own Campus here — see routes/employees.ts.
-  campusId    String?
   createdAt   DateTime @default(now())
 
   workspace   Workspace @relation(fields: [workspaceId], references: [id])
-  campus      Campus?   @relation(fields: [campusId], references: [id])
+  // Zero rows = floats across every Campus in the workspace
+  // (visible/assignable everywhere), same semantics as the old nullable
+  // Employee.campusId this replaces. One or more rows = the specific
+  // Campuses this employee belongs to; a restricted DIRECTOR/
+  // SENIOR_LEAD_INSTRUCTOR creating an Employee always gets exactly their
+  // own single Campus here — see routes/employees.ts.
+  campuses    EmployeeCampus[]
   assignments CellStaffAssignment[]
   payrollAdjustments PayrollAdjustment[]
 
   @@index([workspaceId])
+}
+
+// Employee <-> Campus membership. Same bare join-row shape as
+// CellStaffAssignment (no extra metadata beyond the two FKs); the extra
+// @@index([campusId]) — beyond just the compound unique — is deliberate:
+// this table is looked up by campus (not just by employee) on nearly every
+// request that scopes an employee list or a shift's staff assignment to a
+// given campus.
+model EmployeeCampus {
+  id         String @id @default(uuid())
+  employeeId String
+  campusId   String
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+  campus   Campus   @relation(fields: [campusId], references: [id])
+
+  @@unique([employeeId, campusId])
   @@index([campusId])
 }
 

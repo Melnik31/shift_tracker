@@ -1,4 +1,5 @@
 import { Request } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../db';
 
 // The second scoping dimension alongside requireRole: ADMIN/CEO see every
@@ -51,6 +52,18 @@ export function campusScopeFor(req: Request): CampusScope {
 // lib/ownership.ts.
 export function campusWhere(scope: CampusScope): { campusId?: string } {
   return scope.restricted ? { campusId: scope.campusId ?? NO_CAMPUS_ASSIGNED } : {};
+}
+
+// An Employee's campus membership lives in the EmployeeCampus join table now
+// (see schema.prisma), not a direct campusId column — an employee matches a
+// given campusId if they have a membership row for it, OR they have zero
+// membership rows at all ("floats" across every campus, same semantics as
+// the old nullable Employee.campusId). Replaces five duplicated
+// OR-null-campusId blocks across routes/employees.ts and routes/shifts.ts.
+export function employeeCampusMatch(campusId: string | null): Prisma.EmployeeWhereInput {
+  return {
+    OR: [{ campuses: { some: { campusId: campusId ?? NO_CAMPUS_ASSIGNED } } }, { campuses: { none: {} } }],
+  };
 }
 
 export async function defaultCampusId(workspaceId: string): Promise<string> {

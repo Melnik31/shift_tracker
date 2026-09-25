@@ -263,26 +263,24 @@ describe('campus isolation — shifts', () => {
 });
 
 describe('campus isolation — employees', () => {
-  it('a restricted DIRECTOR creating an employee always gets their own Campus, ignoring any campusId in the body', async () => {
+  it('a restricted DIRECTOR creating an employee always gets their own Campus, ignoring any campusIds in the body', async () => {
     const { directorA, campusA, campusB } = await setupTwoCampuses('CAMPEMP1');
 
-    const res = await directorA.post('/api/employees').send({ name: 'Sneaky Hire', pin: '1111', campusId: campusB.id });
+    const res = await directorA.post('/api/employees').send({ name: 'Sneaky Hire', pin: '1111', campusIds: [campusB.id] });
     expect(res.status).toBe(201);
-    expect(res.body.campusId).toBe(campusA.id);
+    expect(res.body.campuses).toEqual([{ id: campusA.id, name: expect.any(String) }]);
   });
 
-  it('ADMIN can create an employee scoped to a specific campus, or floating (no campusId) if omitted', async () => {
+  it('ADMIN can create an employee scoped to specific campuses, or floating (no campusIds) if omitted', async () => {
     const { adminAgent, campusA } = await setupTwoCampuses('CAMPEMP2');
 
-    const scoped = await adminAgent.post('/api/employees').send({ name: 'Scoped Hire', pin: '1111', campusId: campusA.id });
+    const scoped = await adminAgent.post('/api/employees').send({ name: 'Scoped Hire', pin: '1111', campusIds: [campusA.id] });
     expect(scoped.status).toBe(201);
-    expect(scoped.body.campusId).toBe(campusA.id);
-    expect(scoped.body.campus).toEqual({ id: campusA.id, name: expect.any(String) });
+    expect(scoped.body.campuses).toEqual([{ id: campusA.id, name: expect.any(String) }]);
 
     const floating = await adminAgent.post('/api/employees').send({ name: 'Floating Hire', pin: '2222' });
     expect(floating.status).toBe(201);
-    expect(floating.body.campusId).toBeNull();
-    expect(floating.body.campus).toBeNull();
+    expect(floating.body.campuses).toEqual([]);
   });
 
   it('a DIRECTOR/SENIOR_LEAD_INSTRUCTOR with no Campus assigned cannot create an employee anywhere', async () => {
@@ -295,8 +293,8 @@ describe('campus isolation — employees', () => {
 
   it('GET /api/employees: a scoped DIRECTOR sees their own Campus plus floating employees, never the other Campus; ADMIN sees everyone', async () => {
     const { adminAgent, directorA, directorB, campusA, campusB } = await setupTwoCampuses('CAMPEMP4');
-    await adminAgent.post('/api/employees').send({ name: 'A Employee', pin: '1111', campusId: campusA.id });
-    await adminAgent.post('/api/employees').send({ name: 'B Employee', pin: '2222', campusId: campusB.id });
+    await adminAgent.post('/api/employees').send({ name: 'A Employee', pin: '1111', campusIds: [campusA.id] });
+    await adminAgent.post('/api/employees').send({ name: 'B Employee', pin: '2222', campusIds: [campusB.id] });
     await adminAgent.post('/api/employees').send({ name: 'Floating Employee', pin: '3333' });
 
     const dirA = await directorA.get('/api/employees');
@@ -312,37 +310,52 @@ describe('campus isolation — employees', () => {
     expect(narrowed.body.employees.map((e: any) => e.name).sort()).toEqual(['A Employee', 'Floating Employee']);
   });
 
+  it('an employee assigned to multiple campuses is visible to a restricted Director on any of them', async () => {
+    const { adminAgent, directorA, directorB, campusA, campusB } = await setupTwoCampuses('CAMPEMP4B');
+    await adminAgent.post('/api/employees').send({ name: 'Multi-Campus Employee', pin: '1111', campusIds: [campusA.id, campusB.id] });
+
+    const dirA = await directorA.get('/api/employees');
+    expect(dirA.body.employees.map((e: any) => e.name)).toEqual(['Multi-Campus Employee']);
+
+    const dirB = await directorB.get('/api/employees');
+    expect(dirB.body.employees.map((e: any) => e.name)).toEqual(['Multi-Campus Employee']);
+  });
+
   it('a DIRECTOR from Campus A cannot read, patch, or delete an employee scoped to Campus B', async () => {
     const { adminAgent, directorA, campusB } = await setupTwoCampuses('CAMPEMP5');
-    const empB = (await adminAgent.post('/api/employees').send({ name: 'B Employee', pin: '1111', campusId: campusB.id })).body;
+    const empB = (await adminAgent.post('/api/employees').send({ name: 'B Employee', pin: '1111', campusIds: [campusB.id] })).body;
 
     expect((await directorA.patch(`/api/employees/${empB.id}`).send({ name: 'hijacked' })).status).toBe(404);
     expect((await directorA.delete(`/api/employees/${empB.id}`)).status).toBe(404);
   });
 
-  it('PATCH campusId: 400 for a restricted DIRECTOR, 200 for ADMIN, and validates the target campus', async () => {
+  it('PATCH campusIds: 400 for a restricted DIRECTOR, 200 for ADMIN, and validates every target campus', async () => {
     const { adminAgent, directorA, campusA, campusB, workspace } = await setupTwoCampuses('CAMPEMP6');
-    const emp = (await adminAgent.post('/api/employees').send({ name: 'Movable', pin: '1111', campusId: campusA.id })).body;
+    const emp = (await adminAgent.post('/api/employees').send({ name: 'Movable', pin: '1111', campusIds: [campusA.id] })).body;
 
-    const deniedForDirector = await directorA.patch(`/api/employees/${emp.id}`).send({ campusId: campusB.id });
+    const deniedForDirector = await directorA.patch(`/api/employees/${emp.id}`).send({ campusIds: [campusB.id] });
     expect(deniedForDirector.status).toBe(400);
 
-    const moved = await adminAgent.patch(`/api/employees/${emp.id}`).send({ campusId: campusB.id });
+    const moved = await adminAgent.patch(`/api/employees/${emp.id}`).send({ campusIds: [campusB.id] });
     expect(moved.status).toBe(200);
-    expect(moved.body.campusId).toBe(campusB.id);
+    expect(moved.body.campuses).toEqual([{ id: campusB.id, name: expect.any(String) }]);
 
-    const toFloating = await adminAgent.patch(`/api/employees/${emp.id}`).send({ campusId: null });
+    const toMulti = await adminAgent.patch(`/api/employees/${emp.id}`).send({ campusIds: [campusA.id, campusB.id] });
+    expect(toMulti.status).toBe(200);
+    expect(toMulti.body.campuses.map((c: any) => c.id).sort()).toEqual([campusA.id, campusB.id].sort());
+
+    const toFloating = await adminAgent.patch(`/api/employees/${emp.id}`).send({ campusIds: [] });
     expect(toFloating.status).toBe(200);
-    expect(toFloating.body.campusId).toBeNull();
+    expect(toFloating.body.campuses).toEqual([]);
 
     const { workspace: otherWorkspace } = await signupAdmin(app, { workspaceCode: 'CAMPEMP6B' });
     const foreignCampus = await getDefaultCampus(otherWorkspace.id);
-    const foreign = await adminAgent.patch(`/api/employees/${emp.id}`).send({ campusId: foreignCampus.id });
+    const foreign = await adminAgent.patch(`/api/employees/${emp.id}`).send({ campusIds: [foreignCampus.id] });
     expect(foreign.status).toBe(404);
 
     const inactiveCampus = await createCampus(workspace.id, 'Inactive Campus');
     await adminAgent.post(`/api/campuses/${inactiveCampus.id}/deactivate`);
-    const toInactive = await adminAgent.patch(`/api/employees/${emp.id}`).send({ campusId: inactiveCampus.id });
+    const toInactive = await adminAgent.patch(`/api/employees/${emp.id}`).send({ campusIds: [inactiveCampus.id] });
     expect(toInactive.status).toBe(400);
   });
 
@@ -353,8 +366,8 @@ describe('campus isolation — employees', () => {
         .find((s: any) => s.campusId === campusA.id).locations[0].id, label: 'Staff A', dataType: 'STAFF' })
     ).body;
 
-    const empA = (await adminAgent.post('/api/employees').send({ name: 'A Employee', pin: '1111', campusId: campusA.id })).body;
-    const empB = (await adminAgent.post('/api/employees').send({ name: 'B Employee', pin: '2222', campusId: campusB.id })).body;
+    const empA = (await adminAgent.post('/api/employees').send({ name: 'A Employee', pin: '1111', campusIds: [campusA.id] })).body;
+    const empB = (await adminAgent.post('/api/employees').send({ name: 'B Employee', pin: '2222', campusIds: [campusB.id] })).body;
     const empFloating = (await adminAgent.post('/api/employees').send({ name: 'Floating Employee', pin: '3333' })).body;
 
     const shift = (
@@ -380,5 +393,26 @@ describe('campus isolation — employees', () => {
     const bulkCell = await adminAgent.get('/api/shifts').query({ date: '2026-08-21' });
     const bulkAssignedIds = bulkCell.body.shifts[0].cellValues[0].staffAssignments.map((a: any) => a.employee.id).sort();
     expect(bulkAssignedIds).toEqual([empA.id, empFloating.id].sort());
+  });
+
+  it('STAFF assignment matches an employee via ANY of their assigned campuses', async () => {
+    const { adminAgent, campusA, campusB } = await setupTwoCampuses('CAMPEMP8');
+    const staffSubRowB = (
+      await adminAgent.post('/api/layout/subrows').send({ locationId: (await adminAgent.get('/api/layout')).body.sections
+        .find((s: any) => s.campusId === campusB.id).locations[0].id, label: 'Staff B', dataType: 'STAFF' })
+    ).body;
+
+    const empMulti = (
+      await adminAgent.post('/api/employees').send({ name: 'Multi Employee', pin: '1111', campusIds: [campusA.id, campusB.id] })
+    ).body;
+
+    const shift = (
+      await adminAgent.post('/api/shifts').send({ subRowId: staffSubRowB.id, date: '2026-08-22', startTime: '09:00', endTime: '17:00' })
+    ).body;
+    const cellId = shift.cellValues[0].id;
+
+    const patched = await adminAgent.patch(`/api/shifts/cells/${cellId}`).send({ staffEmployeeIds: [empMulti.id] });
+    expect(patched.status).toBe(200);
+    expect(patched.body.staffAssignments.map((a: any) => a.employee.id)).toEqual([empMulti.id]);
   });
 });

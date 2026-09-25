@@ -13,7 +13,7 @@ describe('employees CRUD', () => {
   it('creates, lists, updates, and deletes an employee', async () => {
     const { agent } = await signupAdmin(app);
 
-    const created = await agent.post('/api/employees').send({ name: 'Sam Patel', role: 'Guard', pin: '1234' });
+    const created = await agent.post('/api/employees').send({ name: 'Sam Patel', roles: ['Guard'], pin: '1234' });
     expect(created.status).toBe(201);
     expect(created.body.name).toBe('Sam Patel');
     // pinHash must never be echoed back to the client.
@@ -24,9 +24,9 @@ describe('employees CRUD', () => {
     expect(listed.body.employees).toHaveLength(1);
     expect(listed.body.employees[0]).not.toHaveProperty('pinHash');
 
-    const patched = await agent.patch(`/api/employees/${created.body.id}`).send({ role: 'Lead Guard' });
+    const patched = await agent.patch(`/api/employees/${created.body.id}`).send({ roles: ['Lead Guard'] });
     expect(patched.status).toBe(200);
-    expect(patched.body.role).toBe('Lead Guard');
+    expect(patched.body.roles).toEqual(['Lead Guard']);
 
     const deleted = await agent.delete(`/api/employees/${created.body.id}`);
     expect(deleted.status).toBe(200);
@@ -74,10 +74,31 @@ describe('employees CRUD', () => {
     expect((await agent.delete('/api/employees/does-not-exist')).status).toBe(404);
   });
 
-  it('defaults role to "Employee" when omitted', async () => {
+  it('defaults roles to [] when omitted', async () => {
     const { agent } = await signupAdmin(app);
     const created = await agent.post('/api/employees').send({ name: 'No Role', pin: '1234' });
-    expect(created.body.role).toBe('Employee');
+    expect(created.body.roles).toEqual([]);
+  });
+
+  it('rejects roles that is not an array of strings', async () => {
+    const { agent } = await signupAdmin(app);
+    expect((await agent.post('/api/employees').send({ name: 'X', pin: '1234', roles: 'Guard' })).status).toBe(400);
+    expect((await agent.post('/api/employees').send({ name: 'X', pin: '1234', roles: [1, 2] })).status).toBe(400);
+
+    const created = await agent.post('/api/employees').send({ name: 'Y', pin: '5678' });
+    expect((await agent.patch(`/api/employees/${created.body.id}`).send({ roles: 'Guard' })).status).toBe(400);
+  });
+
+  it('adds and removes individual roles via PATCH (full-array replace)', async () => {
+    const { agent } = await signupAdmin(app);
+    const created = await agent.post('/api/employees').send({ name: 'Multi Role', pin: '1234', roles: ['Guard'] });
+    expect(created.body.roles).toEqual(['Guard']);
+
+    const added = await agent.patch(`/api/employees/${created.body.id}`).send({ roles: ['Guard', 'Supervisor'] });
+    expect(added.body.roles).toEqual(['Guard', 'Supervisor']);
+
+    const removed = await agent.patch(`/api/employees/${created.body.id}`).send({ roles: ['Supervisor'] });
+    expect(removed.body.roles).toEqual(['Supervisor']);
   });
 
   it('defaults employmentType to "PT" when omitted', async () => {
@@ -141,7 +162,7 @@ describe('employees role gating (requireRole DIRECTOR/ADMIN/CEO)', () => {
       expect((await agent.get('/api/employees')).status).toBe(200);
       const created = await agent.post('/api/employees').send({ name: `Hired by ${label}`, pin: '9999' });
       expect(created.status).toBe(201);
-      expect((await agent.patch(`/api/employees/${created.body.id}`).send({ role: 'Lead' })).status).toBe(200);
+      expect((await agent.patch(`/api/employees/${created.body.id}`).send({ roles: ['Lead'] })).status).toBe(200);
       expect((await agent.delete(`/api/employees/${created.body.id}`)).status).toBe(200);
     }
   });

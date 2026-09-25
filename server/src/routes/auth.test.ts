@@ -143,7 +143,7 @@ describe('POST /api/auth/employee/login', () => {
   async function seedEmployee(workspaceId: string) {
     const bcrypt = await import('bcryptjs');
     return prisma.employee.create({
-      data: { workspaceId, name: 'Riley Chen', role: 'Guard', pinHash: bcrypt.hashSync('1234', 10) },
+      data: { workspaceId, name: 'Riley Chen', roles: ['Guard'], pinHash: bcrypt.hashSync('1234', 10) },
     });
   }
 

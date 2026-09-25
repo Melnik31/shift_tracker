@@ -3,9 +3,11 @@ import { api } from '../lib/api';
 import { Employee, EmploymentType } from '../lib/types';
 
 // campusId narrows the roster to one Campus (plus floating employees — see
-// the Employee.campusId schema comment) — has no effect for a restricted
+// the Employee.campuses schema comment) — has no effect for a restricted
 // Director/SLI, whose own session scope always wins server-side. Mirrors
-// useLayout's campusId pattern.
+// useLayout's campusId pattern. Unrelated to an employee's own (possibly
+// multiple) campus memberships below — this is just a single-value query
+// filter.
 export function useEmployees(campusId?: string | null) {
   return useQuery<{ employees: Employee[] }>({
     queryKey: ['employees', campusId ?? null],
@@ -18,13 +20,13 @@ export function useEmployeeMutations() {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['employees'] });
 
   const addEmployee = useMutation({
-    mutationFn: (vars: { name: string; role: string; pin: string; employmentType?: EmploymentType; campusId?: string }) =>
+    mutationFn: (vars: { name: string; roles: string[]; pin: string; employmentType?: EmploymentType; campusIds?: string[] }) =>
       api.post('/employees', vars),
     onSuccess: invalidate,
   });
 
   const updateEmployee = useMutation({
-    mutationFn: (vars: { id: string; name?: string; role?: string; pin?: string; employmentType?: EmploymentType; campusId?: string | null }) =>
+    mutationFn: (vars: { id: string; name?: string; roles?: string[]; pin?: string; employmentType?: EmploymentType; campusIds?: string[] }) =>
       api.patch(`/employees/${vars.id}`, vars),
     onSuccess: invalidate,
   });

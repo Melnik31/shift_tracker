@@ -76,10 +76,9 @@ export interface AdminUserAccount {
 export interface Employee {
   id: string;
   name: string;
-  role: string;
+  roles: string[];
   employmentType: EmploymentType;
-  campusId: string | null;
-  campus: { id: string; name: string } | null;
+  campuses: { id: string; name: string }[];
 }
 
 export interface FileUpload {
@@ -206,7 +205,7 @@ export interface OverviewDay {
 export interface OverviewEmployee {
   id: string;
   name: string;
-  role: string;
+  roles: string[];
   employmentType: EmploymentType;
   days: OverviewDay[];
   totalBreakdown: {

@@ -4,7 +4,7 @@ import { prisma } from '../db';
 import { requireRole } from '../middleware/auth';
 import { STATUS_VALUES, SESSION_TYPES } from '../types';
 import { rejectIfLocked } from '../lib/payrollLock';
-import { campusScopeFor, NO_CAMPUS_ASSIGNED } from '../lib/campusScope';
+import { campusScopeFor, employeeCampusMatch, NO_CAMPUS_ASSIGNED } from '../lib/campusScope';
 import { subRowInScope, shiftInScope, cellValueInScope, fileUploadInScope, campusIdForSubRow } from '../lib/ownership';
 import { uploadFile, deleteFile } from '../lib/storage';
 
@@ -152,7 +152,7 @@ router.post('/bulk', async (req, res) => {
     if (subRow.dataType === 'STAFF' && Array.isArray(row.staffEmployeeIds)) {
       const targetCampusId = await campusIdForSubRow(subRowId);
       const validEmployees = await prisma.employee.findMany({
-        where: { id: { in: row.staffEmployeeIds }, workspaceId, OR: [{ campusId: targetCampusId }, { campusId: null }] },
+        where: { id: { in: row.staffEmployeeIds }, workspaceId, ...employeeCampusMatch(targetCampusId) },
         select: { id: true },
       });
       const validIds = new Set(validEmployees.map((e) => e.id));
@@ -239,7 +239,7 @@ router.patch('/cells/:id', async (req, res) => {
   if (Array.isArray(staffEmployeeIds)) {
     const targetCampusId = await campusIdForSubRow(existing.subRowId);
     const validEmployees = await prisma.employee.findMany({
-      where: { id: { in: staffEmployeeIds }, workspaceId, OR: [{ campusId: targetCampusId }, { campusId: null }] },
+      where: { id: { in: staffEmployeeIds }, workspaceId, ...employeeCampusMatch(targetCampusId) },
       select: { id: true },
     });
     const validIds = new Set(validEmployees.map((e) => e.id));

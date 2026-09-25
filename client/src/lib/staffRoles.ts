@@ -1,7 +1,7 @@
 import { Section } from './types';
 
 // Every Staff-field label used anywhere in the layout — the set of values
-// an Employee.role can meaningfully "match" to restrict which Staff-
+// an Employee's roles can meaningfully "match" to restrict which Staff-
 // assignment checkboxes they appear on. Shared by ManageTeamModal (role
 // autocomplete suggestions) and the shift-editing modals (role filtering).
 export function collectStaffFieldLabels(sections: Section[]): Set<string> {
@@ -17,16 +17,18 @@ export function collectStaffFieldLabels(sections: Section[]): Set<string> {
 }
 
 // Whether an employee should show up as an assignable option on a given
-// Staff field. A blank role is always unrestricted. A role that exactly
-// matches this field's label (case-insensitive) is always shown. A role
-// that doesn't correspond to ANY known Staff field in the workspace (e.g.
-// a generic job title like "Coach" or "Employee" that predates this
-// feature) is treated as unrestricted too — only a role that specifically
-// matches a *different* known field restricts them away from this one.
-export function employeeVisibleOnStaffField(employeeRole: string | undefined | null, fieldLabel: string, knownLabels: Set<string>): boolean {
-  const role = employeeRole?.trim().toLowerCase();
-  if (!role) return true;
-  if (role === fieldLabel.trim().toLowerCase()) return true;
+// Staff field. No roles at all is always unrestricted. Any role that
+// exactly matches this field's label (case-insensitive) is always shown.
+// Any role that doesn't correspond to ANY known Staff field in the
+// workspace (e.g. a generic job title like "Coach" or "Employee" that
+// predates this feature) is treated as unrestricted too — an employee is
+// hidden from a field only when every one of their roles is a *different*
+// known field's label.
+export function employeeVisibleOnStaffField(employeeRoles: string[] | undefined | null, fieldLabel: string, knownLabels: Set<string>): boolean {
+  const roles = (employeeRoles ?? []).map((r) => r.trim().toLowerCase()).filter(Boolean);
+  if (roles.length === 0) return true;
+  const field = fieldLabel.trim().toLowerCase();
+  if (roles.includes(field)) return true;
   const knownLower = new Set([...knownLabels].map((l) => l.toLowerCase()));
-  return !knownLower.has(role);
+  return roles.some((r) => !knownLower.has(r));
 }

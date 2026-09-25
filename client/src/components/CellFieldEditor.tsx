@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { DataType, Employee, StatusValue, STATUS_VALUES, CellValue } from '../lib/types';
 import { employeeVisibleOnStaffField } from '../lib/staffRoles';
 
@@ -163,23 +164,37 @@ export default function CellFieldEditor({ dataType, state, onChange, employees, 
       );
 
     case 'STAFF': {
-      const visibleEmployees = subRowLabel
-        ? employees.filter((e) => employeeVisibleOnStaffField(e.role, subRowLabel, knownStaffLabels ?? new Set()))
+      // eslint-disable-next-line react-hooks/rules-of-hooks -- dataType is fixed for the lifetime of a given CellFieldEditor instance (one per SubRow), so this branch, once taken, is taken on every render of that instance.
+      const [search, setSearch] = useState('');
+      const roleFiltered = subRowLabel
+        ? employees.filter((e) => employeeVisibleOnStaffField(e.roles, subRowLabel, knownStaffLabels ?? new Set()))
         : employees;
+      const term = search.trim().toLowerCase();
+      const visibleEmployees = term ? roleFiltered.filter((e) => e.name.toLowerCase().includes(term)) : roleFiltered;
       return (
-        <div className="max-h-36 overflow-y-auto space-y-1">
-          {visibleEmployees.map((emp) => (
-            <label key={emp.id} className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={state.staffIds.includes(emp.id)}
-                onChange={(e) =>
-                  onChange({ ...state, staffIds: e.target.checked ? [...state.staffIds, emp.id] : state.staffIds.filter((id) => id !== emp.id) })
-                }
-              />
-              {emp.name}
-            </label>
-          ))}
+        <div>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search employees..."
+            className="w-full mb-1.5 rounded-md border border-slate-300 px-2 py-1 text-sm"
+          />
+          <div className="max-h-36 overflow-y-auto space-y-1">
+            {visibleEmployees.map((emp) => (
+              <label key={emp.id} className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={state.staffIds.includes(emp.id)}
+                  onChange={(e) =>
+                    onChange({ ...state, staffIds: e.target.checked ? [...state.staffIds, emp.id] : state.staffIds.filter((id) => id !== emp.id) })
+                  }
+                />
+                {emp.name}
+              </label>
+            ))}
+            {visibleEmployees.length === 0 && <p className="text-xs text-slate-400 px-1 py-1">No employees match "{search}"</p>}
+          </div>
         </div>
       );
     }

@@ -101,7 +101,7 @@ router.post('/employee/login', async (req, res) => {
   req.session.role = 'COACH'; // Employee has no role column of its own — PIN login implicitly maps to COACH
 
   res.json({
-    employee: { id: match.id, name: match.name, role: match.role },
+    employee: { id: match.id, name: match.name, roles: match.roles },
     workspace: { id: workspace.id, name: workspace.name },
   });
 });
@@ -160,7 +160,7 @@ router.get('/me', async (req, res) => {
   const employee = await prisma.employee.findUnique({ where: { id: req.session.actorId } });
   res.json({
     actorType: 'employee',
-    employee: employee ? { id: employee.id, name: employee.name, role: employee.role } : null,
+    employee: employee ? { id: employee.id, name: employee.name, roles: employee.roles } : null,
     workspace: { id: workspace.id, name: workspace.name },
   });
 });

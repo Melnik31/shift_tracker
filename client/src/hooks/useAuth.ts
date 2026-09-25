@@ -16,7 +16,7 @@ export interface MeResponse {
     // creates this account with a temp password.
     mustChangePassword: boolean;
   } | null;
-  employee?: { id: string; name: string; role: string } | null;
+  employee?: { id: string; name: string; roles: string[] } | null;
   workspace: { id: string; name: string; workspaceCode?: string; onboardingStep?: number };
 }
 

@@ -31,7 +31,7 @@ export async function loginEmployee(app: Express, workspaceCode: string, pin: st
   const agent = request.agent(app);
   const res = await agent.post('/api/auth/employee/login').send({ workspaceCode, pin });
   if (res.status !== 200) throw new Error(`loginEmployee failed: ${res.status} ${JSON.stringify(res.body)}`);
-  return { agent, employee: res.body.employee as { id: string; name: string; role: string } };
+  return { agent, employee: res.body.employee as { id: string; name: string; roles: string[] } };
 }
 
 // Bypasses signup (which always defaults to ADMIN) to create a second

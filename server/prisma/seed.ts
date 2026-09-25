@@ -45,7 +45,7 @@ async function createEmployees(workspaceId: string, names: { name: string; role:
   const created: Record<string, string> = {};
   for (const e of names) {
     const emp = await prisma.employee.create({
-      data: { workspaceId, name: e.name, role: e.role, pinHash: bcrypt.hashSync(e.pin, 10) },
+      data: { workspaceId, name: e.name, roles: [e.role], pinHash: bcrypt.hashSync(e.pin, 10) },
     });
     created[e.name] = emp.id;
   }
@@ -614,6 +614,7 @@ async function main() {
   await prisma.payrollAdjustment.deleteMany();
   await prisma.payrollPeriodReopen.deleteMany();
   await prisma.payrollPeriod.deleteMany();
+  await prisma.employeeCampus.deleteMany();
   await prisma.employee.deleteMany();
   await prisma.roleChange.deleteMany();
   await prisma.adminUser.deleteMany();
