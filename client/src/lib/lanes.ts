@@ -20,7 +20,6 @@ export interface ComputeLanesOptions {
   pxPerMin: number;
   windowStartMin: number;
   minWidthPx: number;
-  gapPx: number;
 }
 
 interface GroupBounds {
@@ -32,9 +31,9 @@ interface GroupBounds {
 }
 
 // Overlap lanes for one Location's timeline: every shift sharing a
-// `groupKey` (Shift.blockId when set, else the shift's own id — see the
-// Shift.blockId schema comment) is one "practice," and every practice gets
-// exactly one lane, reused across every SubRow under the Location. A
+// `groupKey` (the caller decides what that means — see MatrixView.tsx's
+// groupKeyFor) is one "practice," and every practice gets exactly one lane,
+// reused across every SubRow under the Location. A
 // group's collision bounds are the UNION of its members' rendered pixel
 // bounds (left/width, each already clamped to `minWidthPx` individually) —
 // this is never under-conservative (non-overlapping envelopes guarantee
@@ -45,7 +44,7 @@ interface GroupBounds {
 // future change ever lets members' times diverge independently, this stays
 // correct — just possibly one lane wider than the tightest possible packing.
 export function computeLanes(shifts: LaneShift[], opts: ComputeLanesOptions): LaneResult {
-  const { pxPerMin, windowStartMin, minWidthPx, gapPx } = opts;
+  const { pxPerMin, windowStartMin, minWidthPx } = opts;
 
   const groups = new Map<string, GroupBounds>();
   for (const s of shifts) {
@@ -71,18 +70,19 @@ export function computeLanes(shifts: LaneShift[], opts: ComputeLanesOptions): La
   );
 
   // Classic "minimum platforms" greedy interval partitioning: each lane
-  // remembers the right edge (plus gap) of the last group placed in it: a
-  // new group reuses the first lane whose prior occupant has already ended,
-  // else opens a new lane.
+  // remembers the right edge of the last group placed in it: a new group
+  // reuses the first lane whose prior occupant's box has already ended
+  // (touching, not overlapping, counts as ended — a real gap of any size,
+  // including zero, must never force an extra lane), else opens a new one.
   const laneEnds: number[] = [];
   const lanes = new Map<string, number>();
   for (const group of sorted) {
     let laneIndex = laneEnds.findIndex((end) => end <= group.left);
     if (laneIndex === -1) {
       laneIndex = laneEnds.length;
-      laneEnds.push(group.right + gapPx);
+      laneEnds.push(group.right);
     } else {
-      laneEnds[laneIndex] = group.right + gapPx;
+      laneEnds[laneIndex] = group.right;
     }
     lanes.set(group.groupKey, laneIndex);
   }

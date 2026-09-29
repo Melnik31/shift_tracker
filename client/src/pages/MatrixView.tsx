@@ -28,11 +28,24 @@ const LABEL_WIDTH = 260;
 const BASE_PX_PER_MIN = 2.2;
 const GRID_BOTTOM_PADDING = 24; // keeps the last row from sitting flush against the scroll container's edge
 const LANE_GAP_PX = 4; // vertical gap between stacked overlap lanes within one SubRow
-const LANE_COLLISION_GAP_PX = 6; // horizontal buffer so two min-width-clamped short shifts don't visually touch
 const MIN_SHIFT_WIDTH_PX = 32;
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
+}
+
+// What makes several Shifts "the same practice" for lane alignment and
+// color (see lib/lanes.ts): a shared blockId when the shifts were created
+// together via New Shift Block. Most real data isn't that clean though —
+// shifts added individually, or seeded/imported some other way, never get a
+// blockId — so shifts without one fall back to matching on Location + exact
+// date/start/end, the same "block membership" heuristic
+// EditShiftBlockModal.tsx already uses to reconstruct a block for editing.
+// Two shifts landing on this fallback only by coincidence (same location,
+// same exact times, genuinely unrelated) is a rare, purely-cosmetic
+// mis-grouping — never a data risk, since this key is never written back.
+function groupKeyFor(shift: Shift, locationId: string): string {
+  return shift.blockId ?? `${locationId}|${shift.date}|${shift.startTime}|${shift.endTime}`;
 }
 
 type FlatRow =
@@ -100,11 +113,9 @@ export default function MatrixView() {
   }, [shiftsData]);
 
   // Every visible (post-search-filter) shift under a Location, flattened
-  // across its SubRows and tagged with the group it belongs to — a Shift's
-  // blockId when set ("New Shift Block" siblings), else its own id (legacy
-  // or standalone shifts each become their own independent group). Feeds
-  // computeLanes per Location below, so a practice lands in the same lane
-  // across every SubRow of that Location.
+  // across its SubRows and tagged with the group it belongs to (see
+  // groupKeyFor above). Feeds computeLanes per Location below, so a
+  // practice lands in the same lane across every SubRow of that Location.
   const locationShiftLists = useMemo(() => {
     const map = new Map<string, LaneShift[]>();
     for (const row of rows) {
@@ -112,7 +123,7 @@ export default function MatrixView() {
       if (!map.has(row.locationId)) map.set(row.locationId, []);
       const list = map.get(row.locationId)!;
       for (const shift of shiftsBySubRow.get(row.id) ?? []) {
-        list.push({ id: shift.id, groupKey: shift.blockId ?? shift.id, startTime: shift.startTime, endTime: shift.endTime });
+        list.push({ id: shift.id, groupKey: groupKeyFor(shift, row.locationId), startTime: shift.startTime, endTime: shift.endTime });
       }
     }
     return map;
@@ -128,7 +139,7 @@ export default function MatrixView() {
     for (const row of rows) {
       if (row.kind !== 'subrow' || row.dataType !== 'BADGE') continue;
       for (const shift of shiftsBySubRow.get(row.id) ?? []) {
-        const groupKey = shift.blockId ?? shift.id;
+        const groupKey = groupKeyFor(shift, row.locationId);
         const badgeColor = shift.cellValues[0]?.badgeColor;
         if (badgeColor && !map.has(groupKey)) map.set(groupKey, badgeColor);
       }
@@ -139,10 +150,7 @@ export default function MatrixView() {
   const laneResultByLocation = useMemo(() => {
     const map = new Map<string, ReturnType<typeof computeLanes>>();
     for (const [locationId, shifts] of locationShiftLists) {
-      map.set(
-        locationId,
-        computeLanes(shifts, { pxPerMin, windowStartMin: windowStart, minWidthPx: MIN_SHIFT_WIDTH_PX, gapPx: LANE_COLLISION_GAP_PX })
-      );
+      map.set(locationId, computeLanes(shifts, { pxPerMin, windowStartMin: windowStart, minWidthPx: MIN_SHIFT_WIDTH_PX }));
     }
     return map;
   }, [locationShiftLists, pxPerMin, windowStart]);
@@ -271,7 +279,7 @@ export default function MatrixView() {
                     const width = Math.max((toMinutes(shift.endTime) - toMinutes(shift.startTime)) * pxPerMin, MIN_SHIFT_WIDTH_PX);
                     const cellValue = shift.cellValues[0];
                     if (!cellValue) return null;
-                    const groupKey = shift.blockId ?? shift.id;
+                    const groupKey = groupKeyFor(shift, row.locationId);
                     const lane = laneResultByLocation.get(row.locationId)?.lanes.get(groupKey) ?? 0;
                     const perLane = perLaneHeight(row.dataType);
                     const badgeColor = groupBadgeColor.get(groupKey);

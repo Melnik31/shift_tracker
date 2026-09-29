@@ -3,7 +3,7 @@ import { computeLanes, timeRangesOverlap, LaneShift } from './lanes';
 import { toMinutes } from './time';
 
 const WINDOW_START = toMinutes('16:00');
-const DEFAULT_OPTS = { pxPerMin: 1, windowStartMin: WINDOW_START, minWidthPx: 32, gapPx: 6 };
+const DEFAULT_OPTS = { pxPerMin: 1, windowStartMin: WINDOW_START, minWidthPx: 32 };
 
 function shift(id: string, groupKey: string, startTime: string, endTime: string): LaneShift {
   return { id, groupKey, startTime, endTime };
@@ -74,6 +74,16 @@ describe('computeLanes', () => {
     expect(laneCount).toBe(2);
   });
 
+  it('reuses the same lane for two back-to-back shifts with zero gap between them (regression: they must not be treated as colliding)', () => {
+    // e.g. "H5" 5:15-6:00 PM immediately followed by "COLL & HS" 6:00-7:15
+    // PM on the same row — touching, not overlapping, must share a lane.
+    const shifts = [shift('s1', 'H5', '17:15', '18:00'), shift('s2', 'COLL', '18:00', '19:15')];
+    const { lanes, laneCount } = computeLanes(shifts, DEFAULT_OPTS);
+    expect(lanes.get('H5')).toBe(0);
+    expect(lanes.get('COLL')).toBe(0);
+    expect(laneCount).toBe(1);
+  });
+
   it('treats a legacy (ungrouped) shift as its own independent single-member group', () => {
     // groupKey = the shift's own id, exactly what MatrixView does for a
     // Shift with blockId === null.
@@ -87,8 +97,8 @@ describe('computeLanes', () => {
     // Group K has two members far apart (simulating two SubRows of the same
     // practice); a third, unrelated group L sits entirely inside K's
     // combined time span without overlapping either individual member.
-    // minWidthPx/gapPx are 0 here so the example isn't muddied by clamping.
-    const opts = { ...DEFAULT_OPTS, minWidthPx: 0, gapPx: 0 };
+    // minWidthPx is 0 here so the example isn't muddied by clamping.
+    const opts = { ...DEFAULT_OPTS, minWidthPx: 0 };
     const k1 = shift('k1', 'K', '17:00', '17:20');
     const k2 = shift('k2', 'K', '18:00', '18:20');
     const l = shift('l1', 'L', '17:40', '17:50');
