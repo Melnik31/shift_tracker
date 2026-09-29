@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import multer from 'multer';
 import { prisma } from '../db';
 import { requireRole } from '../middleware/auth';
@@ -76,7 +77,7 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
   const scope = campusScopeFor(req);
-  const { subRowId, date, startTime, endTime, sessionType } = req.body ?? {};
+  const { subRowId, date, startTime, endTime, sessionType, blockId } = req.body ?? {};
   const subRow = await subRowInScope(subRowId, workspaceId, scope);
   if (!subRow) return res.status(404).json({ error: 'SubRow not found' });
   if (!date || !startTime || !endTime) return res.status(400).json({ error: 'date, startTime, endTime are required' });
@@ -85,7 +86,13 @@ router.post('/', async (req, res) => {
   }
   if (await rejectIfLocked(req, res, workspaceId, date)) return;
 
-  const shift = await prisma.shift.create({ data: { workspaceId, subRowId, date, startTime, endTime, sessionType: sessionType ?? null } });
+  // Optional blockId lets a caller (EditShiftBlockModal, adding a new
+  // sibling row to an existing block mid-edit) join this Shift to that
+  // block's overlap lane — see the Shift.blockId schema comment. The
+  // ordinary per-row "+" button never sends one, so it stays standalone.
+  const shift = await prisma.shift.create({
+    data: { workspaceId, subRowId, date, startTime, endTime, sessionType: sessionType ?? null, blockId: typeof blockId === 'string' ? blockId : null },
+  });
   const cellValue = await prisma.cellValue.create({ data: { shiftId: shift.id, subRowId } });
   const full = await prisma.shift.findUnique({
     where: { id: shift.id },
@@ -113,6 +120,13 @@ router.post('/bulk', async (req, res) => {
   if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: 'rows must be a nonempty array' });
   if (await rejectIfLocked(req, res, workspaceId, date)) return;
 
+  // One id shared by every Shift this call creates, regardless of how many
+  // rows end up filled — lets the Matrix view align this practice into the
+  // same overlap lane across every SubRow of the Location (see
+  // client/src/lib/lanes.ts). Two separate bulk calls always get different
+  // ids, even with identical/overlapping times — grouping is never inferred
+  // from matching timestamps.
+  const blockId = crypto.randomUUID();
   const created: { subRowId: string; shiftId: string; cellValueId: string }[] = [];
   const skipped: { subRowId: string; reason: string }[] = [];
 
@@ -137,7 +151,7 @@ router.post('/bulk', async (req, res) => {
       continue;
     }
 
-    const shift = await prisma.shift.create({ data: { workspaceId, subRowId, date, startTime, endTime, sessionType: sessionType ?? null } });
+    const shift = await prisma.shift.create({ data: { workspaceId, subRowId, date, startTime, endTime, sessionType: sessionType ?? null, blockId } });
     const cellValue = await prisma.cellValue.create({
       data: {
         shiftId: shift.id,

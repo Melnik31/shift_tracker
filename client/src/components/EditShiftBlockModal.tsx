@@ -14,10 +14,7 @@ import { api } from '../lib/api';
 import { Shift, SESSION_TYPES, SubRow } from '../lib/types';
 import { DATA_TYPE_INFO } from '../lib/constants';
 import { collectStaffFieldLabels } from '../lib/staffRoles';
-
-function timeRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
-  return aStart < bEnd && bStart < aEnd;
-}
+import { timeRangesOverlap } from '../lib/lanes';
 
 interface Props {
   shift: Shift;
@@ -146,7 +143,14 @@ export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSa
               await api.post(`/shifts/cells/${member.cellValues[0].id}/files`, form);
             }
           } else if (file) {
-            const created = await api.post<Shift>('/shifts', { subRowId: sr.id, date, startTime, endTime, sessionType: sessionType || null });
+            const created = await api.post<Shift>('/shifts', {
+              subRowId: sr.id,
+              date,
+              startTime,
+              endTime,
+              sessionType: sessionType || null,
+              blockId: shift.blockId,
+            });
             const form = new FormData();
             form.append('file', file);
             await api.post(`/shifts/cells/${created.cellValues[0].id}/files`, form);
@@ -159,7 +163,14 @@ export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSa
           await api.patch(`/shifts/${member.id}`, { startTime, endTime, sessionType: sessionType || null, cancelled });
           await api.patch(`/shifts/cells/${member.cellValues[0].id}`, cellFieldPayload(sr.dataType, state));
         } else if (isCellFieldStateFilled(sr.dataType, state)) {
-          const created = await api.post<Shift>('/shifts', { subRowId: sr.id, date, startTime, endTime, sessionType: sessionType || null });
+          const created = await api.post<Shift>('/shifts', {
+            subRowId: sr.id,
+            date,
+            startTime,
+            endTime,
+            sessionType: sessionType || null,
+            blockId: shift.blockId,
+          });
           await api.patch(`/shifts/cells/${created.cellValues[0].id}`, cellFieldPayload(sr.dataType, state));
         }
       }

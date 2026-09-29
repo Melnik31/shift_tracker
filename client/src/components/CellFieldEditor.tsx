@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { DataType, Employee, StatusValue, STATUS_VALUES, CellValue } from '../lib/types';
 import { employeeVisibleOnStaffField } from '../lib/staffRoles';
+import { useBadgeColors, useBadgeColorMutations } from '../hooks/useBadgeColors';
 
 // Shared by CellPopover (editing an existing shift's cell) and
 // NewShiftBlockModal (composing several not-yet-created shifts at once) so
@@ -99,7 +100,16 @@ export default function CellFieldEditor({ dataType, state, onChange, employees, 
         />
       );
 
-    case 'BADGE':
+    case 'BADGE': {
+      // eslint-disable-next-line react-hooks/rules-of-hooks -- dataType is fixed for the lifetime of a given CellFieldEditor instance (one per SubRow), same reasoning as the STAFF case below.
+      const { data: badgeColorsData } = useBadgeColors();
+      const { saveColor, removeColor } = useBadgeColorMutations();
+      const colorInputRef = useRef<HTMLInputElement>(null);
+
+      const savedColors = (badgeColorsData?.colors ?? []).filter((c) => !BADGE_COLORS.includes(c.color));
+      const knownColors = [...BADGE_COLORS, ...savedColors.map((c) => c.color)];
+      const canSaveCurrentColor = state.badgeColor.length > 0 && !knownColors.includes(state.badgeColor);
+
       return (
         <div>
           <input
@@ -110,7 +120,7 @@ export default function CellFieldEditor({ dataType, state, onChange, employees, 
             className="w-full mb-2 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
             placeholder="e.g. High, Headliner"
           />
-          <div className="flex gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {BADGE_COLORS.map((c) => (
               <button
                 key={c}
@@ -120,9 +130,55 @@ export default function CellFieldEditor({ dataType, state, onChange, employees, 
                 className={`w-6 h-6 rounded-full border-2 ${state.badgeColor === c ? 'border-slate-900' : 'border-transparent'}`}
               />
             ))}
+            {savedColors.map((c) => (
+              <div key={c.id} className="relative group">
+                <button
+                  type="button"
+                  onClick={() => onChange({ ...state, badgeColor: c.color })}
+                  style={{ backgroundColor: c.color }}
+                  className={`w-6 h-6 rounded-full border-2 ${state.badgeColor === c.color ? 'border-slate-900' : 'border-transparent'}`}
+                />
+                <button
+                  type="button"
+                  title="Remove saved color"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeColor.mutate(c.id);
+                  }}
+                  className="absolute -top-1 -right-1 hidden group-hover:flex items-center justify-center w-3.5 h-3.5 rounded-full bg-slate-700 text-white text-[8px] leading-none"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              title="Pick a custom color"
+              onClick={() => colorInputRef.current?.click()}
+              className="w-6 h-6 rounded-full border-2 border-dashed border-slate-300 text-slate-400 text-xs leading-none flex items-center justify-center hover:border-slate-400 hover:text-slate-600"
+            >
+              +
+            </button>
+            <input
+              ref={colorInputRef}
+              type="color"
+              value={/^#[0-9a-fA-F]{6}$/.test(state.badgeColor) ? state.badgeColor : '#000000'}
+              onChange={(e) => onChange({ ...state, badgeColor: e.target.value })}
+              className="sr-only"
+            />
           </div>
+          {canSaveCurrentColor && (
+            <button
+              type="button"
+              onClick={() => saveColor.mutate(state.badgeColor)}
+              className="mt-1.5 text-xs text-blue-700 hover:text-blue-900 font-medium"
+            >
+              + Save this color for quick selection
+            </button>
+          )}
         </div>
       );
+    }
 
     case 'STATUS':
       return (

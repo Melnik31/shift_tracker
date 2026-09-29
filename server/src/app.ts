@@ -13,6 +13,7 @@ import analyticsRoutes from './routes/analytics';
 import payrollRoutes from './routes/payroll';
 import adminRoutes from './routes/admins';
 import campusRoutes from './routes/campuses';
+import badgeColorRoutes from './routes/badgeColors';
 
 const PgSessionStore = pgSession(session);
 
@@ -89,6 +90,7 @@ export function createApp() {
   app.use('/api/payroll', payrollRoutes);
   app.use('/api/admin-users', adminRoutes);
   app.use('/api/campuses', campusRoutes);
+  app.use('/api/badge-colors', badgeColorRoutes);
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
 

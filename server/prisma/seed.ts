@@ -618,6 +618,7 @@ async function main() {
   await prisma.employee.deleteMany();
   await prisma.roleChange.deleteMany();
   await prisma.adminUser.deleteMany();
+  await prisma.savedBadgeColor.deleteMany();
   await prisma.campus.deleteMany();
   await prisma.workspace.deleteMany();
 

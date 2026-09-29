@@ -3,27 +3,23 @@ import SidePanel from './SidePanel';
 import CellFieldEditor, { CellFieldState, cellFieldPayload, emptyCellFieldState, isCellFieldStateFilled } from './CellFieldEditor';
 import { useLayout } from '../hooks/useLayout';
 import { useEmployees } from '../hooks/useEmployees';
-import { useShifts, useBulkShiftMutation } from '../hooks/useShifts';
+import { useBulkShiftMutation } from '../hooks/useShifts';
 import { api } from '../lib/api';
 import { BulkShiftRow, SESSION_TYPES } from '../lib/types';
 import { DATA_TYPE_INFO } from '../lib/constants';
 import { collectStaffFieldLabels } from '../lib/staffRoles';
 import { toMinutes, fromMinutes } from '../lib/time';
 
-function timeRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
-  return aStart < bEnd && bStart < aEnd;
-}
-
 // "New Shift Block": one date/startTime/endTime/sessionType entered once,
 // then one input per SubRow under a chosen Location, reusing the exact same
 // per-dataType editor as the single-shift popover (CellFieldEditor). Rows
-// left blank are skipped; rows that already have an overlapping shift on
-// that SubRow/date/time are flagged and excluded before submit, then
-// re-checked server-side (POST /shifts/bulk) as the source of truth.
+// left blank are skipped. A row overlapping an existing shift on that
+// SubRow/date/time is allowed, not flagged — the Matrix view's overlap
+// lanes (see lib/lanes.ts) are what make that a normal, fully-visible
+// state now, not something to warn about at creation time.
 export default function NewShiftBlockModal({ date, onClose }: { date: string; onClose: () => void }) {
   const { data: layout } = useLayout();
   const [blockDate, setBlockDate] = useState(date);
-  const { data: shiftsData } = useShifts(blockDate);
   const bulkCreate = useBulkShiftMutation();
 
   const sections = layout?.sections ?? [];
@@ -44,12 +40,7 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
   const location = locations.find((l) => l.id === locationId);
   const subRows = location?.subRows ?? [];
   const employees = employeesData?.employees ?? [];
-  const shifts = shiftsData?.shifts ?? [];
   const knownStaffLabels = useMemo(() => collectStaffFieldLabels(layout?.sections ?? []), [layout]);
-
-  function conflictFor(subRowId: string) {
-    return shifts.some((s) => s.subRowId === subRowId && timeRangesOverlap(s.startTime, s.endTime, startTime, endTime));
-  }
 
   // Defaults End to an hour after whatever Start the user just picked —
   // clamped so a late start (e.g. 23:30) can't produce an invalid "24:30".
@@ -231,36 +222,32 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
           <div className="border-t border-slate-200 pt-3 space-y-3">
             <p className="text-xs font-medium text-slate-500">Fill in the rows to create — leave any blank to skip them.</p>
             {subRows.length === 0 && <p className="text-xs text-slate-400">This location has no rows yet.</p>}
-            {subRows.map((sr) => {
-              const conflict = conflictFor(sr.id);
-              return (
-                <div key={sr.id} className={`border rounded-md px-3.5 py-3 ${conflict ? 'border-amber-200 bg-amber-50' : 'border-slate-200'}`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-semibold text-slate-800">{sr.label}</span>
-                    <span className="inline-flex items-center rounded-full border border-slate-300 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-                      {DATA_TYPE_INFO[sr.dataType].label}
-                    </span>
-                  </div>
-                  {conflict && <p className="text-xs text-amber-700 mb-2">Already scheduled at this time — creating this will overlap it</p>}
-                  {sr.dataType === 'FILE' ? (
-                    <input
-                      type="file"
-                      onChange={(e) => setRowFiles((prev) => ({ ...prev, [sr.id]: e.target.files?.[0] ?? null }))}
-                      className="text-xs"
-                    />
-                  ) : (
-                    <CellFieldEditor
-                      dataType={sr.dataType}
-                      state={rowState(sr.id)}
-                      onChange={(next) => setRowState(sr.id, next)}
-                      employees={employees}
-                      subRowLabel={sr.label}
-                      knownStaffLabels={knownStaffLabels}
-                    />
-                  )}
+            {subRows.map((sr) => (
+              <div key={sr.id} className="border rounded-md px-3.5 py-3 border-slate-200">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-semibold text-slate-800">{sr.label}</span>
+                  <span className="inline-flex items-center rounded-full border border-slate-300 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                    {DATA_TYPE_INFO[sr.dataType].label}
+                  </span>
                 </div>
-              );
-            })}
+                {sr.dataType === 'FILE' ? (
+                  <input
+                    type="file"
+                    onChange={(e) => setRowFiles((prev) => ({ ...prev, [sr.id]: e.target.files?.[0] ?? null }))}
+                    className="text-xs"
+                  />
+                ) : (
+                  <CellFieldEditor
+                    dataType={sr.dataType}
+                    state={rowState(sr.id)}
+                    onChange={(next) => setRowState(sr.id, next)}
+                    employees={employees}
+                    subRowLabel={sr.label}
+                    knownStaffLabels={knownStaffLabels}
+                  />
+                )}
+              </div>
+            ))}
           </div>
         )}
 

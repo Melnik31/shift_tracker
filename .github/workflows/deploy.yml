@@ -52,6 +52,8 @@ jobs:
         working-directory: client
       - run: npx tsc --noEmit
         working-directory: client
+      - run: npm test
+        working-directory: client
 
   migrate-and-deploy:
     needs: test

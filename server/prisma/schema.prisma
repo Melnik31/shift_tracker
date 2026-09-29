@@ -37,6 +37,7 @@ model Workspace {
   payrollAdjustments PayrollAdjustment[]
   payrollPeriodReopens PayrollPeriodReopen[]
   roleChanges RoleChange[]
+  savedBadgeColors SavedBadgeColor[]
 }
 
 // A Workspace subdivision that scopes DIRECTOR/SENIOR_LEAD_INSTRUCTOR access (ADMIN/CEO see
@@ -243,6 +244,13 @@ model Shift {
   endTime     String   // HH:mm
   sessionType String?  // descriptive only, see SESSION_TYPES in src/types.ts; nullable so existing shifts are unaffected
   cancelled   Boolean  @default(false)
+  // Shared by every Shift created together in one POST /shifts/bulk call
+  // ("New Shift Block" — one Shift per SubRow under a Location). Lets the
+  // Matrix view align a practice into the same overlap lane across every
+  // SubRow of its Location — see client/src/lib/lanes.ts. Never inferred
+  // from matching times; null means "standalone" (every pre-existing Shift,
+  // and any created via the plain per-row POST /shifts with no blockId).
+  blockId     String?
 
   workspace  Workspace   @relation(fields: [workspaceId], references: [id])
   subRow     SubRow      @relation(fields: [subRowId], references: [id])
@@ -272,6 +280,22 @@ model CellValue {
   fileUploads      FileUpload[]
 
   @@unique([shiftId, subRowId])
+}
+
+// A workspace-shared "quick pick" palette of custom colors an admin has
+// saved while choosing a BADGE color (see CellFieldEditor.tsx) — supplements
+// the fixed BADGE_COLORS defaults, visible to every admin editing badges in
+// this workspace, not just the one who saved it.
+model SavedBadgeColor {
+  id          String   @id @default(uuid())
+  workspaceId String
+  color       String   // hex, e.g. "#ff6b35"
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([workspaceId, color])
+  @@index([workspaceId])
 }
 
 model CellStaffAssignment {

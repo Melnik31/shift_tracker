@@ -109,6 +109,10 @@ export interface Shift {
   endTime: string;
   sessionType?: string | null;
   cancelled?: boolean;
+  // Shared by every Shift created together in one "New Shift Block" call —
+  // see lib/lanes.ts. null = standalone (every legacy Shift, and any
+  // created via the plain per-row "+" button).
+  blockId?: string | null;
   cellValues: CellValue[];
 }
 

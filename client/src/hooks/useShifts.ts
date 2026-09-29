@@ -19,7 +19,7 @@ export function useShiftMutations(date: string) {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['shifts', date] });
 
   const addShift = useMutation({
-    mutationFn: (vars: { subRowId: string; date: string; startTime: string; endTime: string }) => api.post<Shift>('/shifts', vars),
+    mutationFn: (vars: { subRowId: string; date: string; startTime: string; endTime: string; blockId?: string }) => api.post<Shift>('/shifts', vars),
     onSuccess: invalidate,
   });
 

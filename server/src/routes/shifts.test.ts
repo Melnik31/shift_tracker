@@ -344,6 +344,46 @@ describe('bulk shift creation (New Shift Block)', () => {
     }
   });
 
+  it('gives every shift from one bulk call the same blockId, and a different blockId to a separate bulk call', async () => {
+    const { agent } = await signupAdmin(app);
+    const { status, text, badge } = await makeBlockLocation(agent);
+
+    const first = await agent.post('/api/shifts/bulk').send({
+      date: '2026-09-04',
+      startTime: '09:00',
+      endTime: '10:00',
+      rows: [
+        { subRowId: status.id, statusValue: 'SCHEDULED' },
+        { subRowId: text.id, textValue: 'Practice A' },
+      ],
+    });
+    expect(first.status).toBe(201);
+
+    // Same date/time range, on purpose — grouping must come only from
+    // having been created in the same bulk call, never inferred from
+    // matching timestamps.
+    const second = await agent.post('/api/shifts/bulk').send({
+      date: '2026-09-04',
+      startTime: '09:00',
+      endTime: '10:00',
+      rows: [{ subRowId: badge.id, badgeLabel: 'Practice B' }],
+    });
+    expect(second.status).toBe(201);
+
+    const shifts = (await agent.get('/api/shifts').query({ date: '2026-09-04' })).body.shifts;
+    expect(shifts).toHaveLength(3);
+    const firstBlockShifts = shifts.filter((s: { subRowId: string }) => s.subRowId === status.id || s.subRowId === text.id);
+    const secondBlockShifts = shifts.filter((s: { subRowId: string }) => s.subRowId === badge.id);
+
+    expect(firstBlockShifts).toHaveLength(2);
+    expect(firstBlockShifts[0].blockId).toBeTruthy();
+    expect(firstBlockShifts[0].blockId).toBe(firstBlockShifts[1].blockId);
+
+    expect(secondBlockShifts).toHaveLength(1);
+    expect(secondBlockShifts[0].blockId).toBeTruthy();
+    expect(secondBlockShifts[0].blockId).not.toBe(firstBlockShifts[0].blockId);
+  });
+
   it('creates STAFF assignments for a filled STAFF row and silently drops a cross-workspace employee id', async () => {
     const { agent: a } = await signupAdmin(app, { workspaceCode: 'BULK1' });
     const { agent: b } = await signupAdmin(app, { workspaceCode: 'BULK2' });

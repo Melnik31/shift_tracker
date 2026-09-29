@@ -5,6 +5,8 @@ import { useAuth } from '../hooks/useAuth';
 import { toMinutes, formatTime12h } from '../lib/time';
 import { OPERATIONAL_START, OPERATIONAL_END, SESSION_TYPE_COLORS } from '../lib/constants';
 import { Shift, SubRow } from '../lib/types';
+import { computeLanes, LaneShift } from '../lib/lanes';
+import { colorForBlock, blockColorFromBadge } from '../lib/colors';
 import CellBlock from '../components/CellBlock';
 import CampusSelector from '../components/CampusSelector';
 import { useCampuses } from '../hooks/useCampuses';
@@ -25,6 +27,9 @@ const LOCATION_ROW_HEIGHT = 30;
 const LABEL_WIDTH = 260;
 const BASE_PX_PER_MIN = 2.2;
 const GRID_BOTTOM_PADDING = 24; // keeps the last row from sitting flush against the scroll container's edge
+const LANE_GAP_PX = 4; // vertical gap between stacked overlap lanes within one SubRow
+const LANE_COLLISION_GAP_PX = 6; // horizontal buffer so two min-width-clamped short shifts don't visually touch
+const MIN_SHIFT_WIDTH_PX = 32;
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -33,7 +38,7 @@ function todayStr() {
 type FlatRow =
   | { kind: 'section'; id: string; name: string }
   | { kind: 'location'; id: string; name: string }
-  | { kind: 'subrow'; id: string; label: string; dataType: SubRow['dataType']; subRow: SubRow };
+  | { kind: 'subrow'; id: string; label: string; dataType: SubRow['dataType']; subRow: SubRow; locationId: string };
 
 export default function MatrixView() {
   const { data: me } = useAuth();
@@ -78,7 +83,7 @@ export default function MatrixView() {
       for (const loc of visibleLocations) {
         out.push({ kind: 'location', id: loc.id, name: loc.name });
         for (const sr of loc.subRows) {
-          out.push({ kind: 'subrow', id: sr.id, label: sr.label, dataType: sr.dataType, subRow: sr });
+          out.push({ kind: 'subrow', id: sr.id, label: sr.label, dataType: sr.dataType, subRow: sr, locationId: loc.id });
         }
       }
     }
@@ -94,10 +99,64 @@ export default function MatrixView() {
     return map;
   }, [shiftsData]);
 
+  // Every visible (post-search-filter) shift under a Location, flattened
+  // across its SubRows and tagged with the group it belongs to — a Shift's
+  // blockId when set ("New Shift Block" siblings), else its own id (legacy
+  // or standalone shifts each become their own independent group). Feeds
+  // computeLanes per Location below, so a practice lands in the same lane
+  // across every SubRow of that Location.
+  const locationShiftLists = useMemo(() => {
+    const map = new Map<string, LaneShift[]>();
+    for (const row of rows) {
+      if (row.kind !== 'subrow') continue;
+      if (!map.has(row.locationId)) map.set(row.locationId, []);
+      const list = map.get(row.locationId)!;
+      for (const shift of shiftsBySubRow.get(row.id) ?? []) {
+        list.push({ id: shift.id, groupKey: shift.blockId ?? shift.id, startTime: shift.startTime, endTime: shift.endTime });
+      }
+    }
+    return map;
+  }, [rows, shiftsBySubRow]);
+
+  // The BADGE color chosen for a practice, if it has one — the first BADGE
+  // SubRow with a value wins (deterministic: SubRows are already in the
+  // layout's own sortOrder). A group with no BADGE cell at all (or one left
+  // blank) has no entry here, and falls back to colorForBlock's hash-based
+  // color — see the render below.
+  const groupBadgeColor = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of rows) {
+      if (row.kind !== 'subrow' || row.dataType !== 'BADGE') continue;
+      for (const shift of shiftsBySubRow.get(row.id) ?? []) {
+        const groupKey = shift.blockId ?? shift.id;
+        const badgeColor = shift.cellValues[0]?.badgeColor;
+        if (badgeColor && !map.has(groupKey)) map.set(groupKey, badgeColor);
+      }
+    }
+    return map;
+  }, [rows, shiftsBySubRow]);
+
+  const laneResultByLocation = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof computeLanes>>();
+    for (const [locationId, shifts] of locationShiftLists) {
+      map.set(
+        locationId,
+        computeLanes(shifts, { pxPerMin, windowStartMin: windowStart, minWidthPx: MIN_SHIFT_WIDTH_PX, gapPx: LANE_COLLISION_GAP_PX })
+      );
+    }
+    return map;
+  }, [locationShiftLists, pxPerMin, windowStart]);
+
+  function perLaneHeight(dataType: SubRow['dataType']) {
+    return dataType === 'STAFF' || dataType === 'TEXT' ? MULTILINE_ROW_HEIGHT : ROW_HEIGHT;
+  }
+
   function rowHeight(row: FlatRow) {
     if (row.kind === 'section') return SECTION_ROW_HEIGHT;
     if (row.kind === 'location') return LOCATION_ROW_HEIGHT;
-    return row.dataType === 'STAFF' || row.dataType === 'TEXT' ? MULTILINE_ROW_HEIGHT : ROW_HEIGHT;
+    const laneCount = laneResultByLocation.get(row.locationId)?.laneCount ?? 1;
+    const perLane = perLaneHeight(row.dataType);
+    return laneCount * perLane + (laneCount - 1) * LANE_GAP_PX;
   }
 
   function openCellEditor(shift: Shift, subRow: SubRow) {
@@ -209,9 +268,14 @@ export default function MatrixView() {
                 {row.kind === 'subrow' &&
                   (shiftsBySubRow.get(row.id) ?? []).map((shift) => {
                     const left = (toMinutes(shift.startTime) - windowStart) * pxPerMin;
-                    const width = Math.max((toMinutes(shift.endTime) - toMinutes(shift.startTime)) * pxPerMin, 32);
+                    const width = Math.max((toMinutes(shift.endTime) - toMinutes(shift.startTime)) * pxPerMin, MIN_SHIFT_WIDTH_PX);
                     const cellValue = shift.cellValues[0];
                     if (!cellValue) return null;
+                    const groupKey = shift.blockId ?? shift.id;
+                    const lane = laneResultByLocation.get(row.locationId)?.lanes.get(groupKey) ?? 0;
+                    const perLane = perLaneHeight(row.dataType);
+                    const badgeColor = groupBadgeColor.get(groupKey);
+                    const { accent, tint } = badgeColor ? blockColorFromBadge(badgeColor) : colorForBlock(groupKey);
                     return (
                       <button
                         key={shift.id}
@@ -221,8 +285,16 @@ export default function MatrixView() {
                             ? `${shift.sessionType} — ${formatTime12h(shift.startTime)} – ${formatTime12h(shift.endTime)}`
                             : `${formatTime12h(shift.startTime)} – ${formatTime12h(shift.endTime)}`
                         }
-                        style={{ left, width, top: 4, height: rowHeight(row) - 8 }}
-                        className="absolute rounded-md border border-slate-200 bg-white hover:border-slate-400 px-2 py-1 flex flex-col items-stretch min-w-0 overflow-hidden text-left shadow-sm"
+                        style={{
+                          left,
+                          width,
+                          top: 4 + lane * (perLane + LANE_GAP_PX),
+                          height: perLane - 8,
+                          borderLeftColor: accent,
+                          borderLeftWidth: 3,
+                          backgroundColor: tint,
+                        }}
+                        className="absolute rounded-md border border-slate-200 hover:border-slate-400 px-2 py-1 flex flex-col items-stretch min-w-0 overflow-hidden text-left shadow-sm"
                       >
                         <span className="text-[9px] leading-tight text-slate-400 truncate flex-shrink-0 flex items-center gap-1">
                           {shift.sessionType && (
