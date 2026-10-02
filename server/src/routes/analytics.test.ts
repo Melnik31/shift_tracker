@@ -179,6 +179,26 @@ describe('coach group hours (SubRow.isGroupField aggregation)', () => {
     expect(res.body.totalHours).toBe(0);
   });
 
+  it('treats a shift whose endTime is before its startTime as crossing midnight, never as negative hours', async () => {
+    const { agent } = await signupAdmin(app, { workspaceCode: 'GH7' });
+    const { tier, staff } = await makeGroupLocation(agent);
+    const coach = (await agent.post('/api/employees').send({ name: 'Coach', pin: '1111' })).body;
+
+    await agent.post('/api/shifts/bulk').send({
+      date: '2026-08-01',
+      startTime: '23:00',
+      endTime: '00:30', // crosses midnight — 1.5 real hours, not -22.5
+      rows: [
+        { subRowId: tier.id, badgeLabel: 'T2 BLUE', badgeColor: '#3b82f6' },
+        { subRowId: staff.id, staffEmployeeIds: [coach.id] },
+      ],
+    });
+
+    const res = await agent.get('/api/analytics/group-hours').query({ employeeId: coach.id, start: '2026-08-01', end: '2026-08-31' });
+    expect(res.body.groups).toEqual([{ group: 'T2 BLUE', color: '#3b82f6', hours: 1.5, shiftCount: 1 }]);
+    expect(res.body.totalHours).toBe(1.5);
+  });
+
   it('narrows to one campus with ?campusId=, excluding a shift at another campus', async () => {
     const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'GH6' });
     const campusA = await getDefaultCampus(workspace.id);

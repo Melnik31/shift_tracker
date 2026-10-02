@@ -129,7 +129,11 @@ export async function getEmployeeGroupHours(
     }
     const group = badge?.label ?? UNGROUPED;
 
-    const minutes = toMinutes(shift.endTime) - toMinutes(shift.startTime);
+    // A shift whose endTime is not after its startTime (e.g. 23:00-00:30)
+    // crosses midnight — HH:mm alone can't express the next day, so the
+    // only sane reading is "add 24h," never a negative duration.
+    let minutes = toMinutes(shift.endTime) - toMinutes(shift.startTime);
+    if (minutes < 0) minutes += 24 * 60;
     const entry = totals.get(group) ?? { color: badge?.color ?? null, minutes: 0, shiftCount: 0 };
     entry.minutes += minutes;
     entry.shiftCount += 1;
