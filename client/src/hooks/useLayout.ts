@@ -73,7 +73,7 @@ export function useLayoutMutations() {
   });
 
   const updateSubRow = useMutation({
-    mutationFn: (vars: { id: string; label?: string; config?: object }) => api.patch(`/layout/subrows/${vars.id}`, vars),
+    mutationFn: (vars: { id: string; label?: string; config?: object; isGroupField?: boolean }) => api.patch(`/layout/subrows/${vars.id}`, vars),
     onSuccess: invalidate,
   });
 

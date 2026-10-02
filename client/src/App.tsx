@@ -7,6 +7,7 @@ import Onboarding from './pages/Onboarding/Onboarding';
 import SetPassword from './pages/SetPassword';
 import MatrixView from './pages/MatrixView';
 import DashboardView from './pages/DashboardView';
+import CoachGroupHours from './pages/CoachGroupHours';
 import PayrollReview from './pages/PayrollReview';
 import MyShifts from './pages/MyShifts';
 import { useAuth } from './hooks/useAuth';
@@ -94,6 +95,14 @@ export default function App() {
         element={
           <RequireAdmin>
             <DashboardView />
+          </RequireAdmin>
+        }
+      />
+      <Route
+        path="/coach-hours"
+        element={
+          <RequireAdmin>
+            <CoachGroupHours />
           </RequireAdmin>
         }
       />

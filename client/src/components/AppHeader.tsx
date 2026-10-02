@@ -19,6 +19,8 @@ interface Props {
   /** Range mode — used by the Daily Overview dashboard. Takes precedence over date/onDateChange when provided. */
   dateRange?: DateRange;
   onDateRangeChange?: (r: DateRange) => void;
+  /** Passed through to DateRangePicker — see its own doc comment. */
+  dateRangeShowAllTime?: boolean;
   /** Set false to hide the built-in "+ Add Shift" button — e.g. Matrix View, where "+ New Shift Block" is the primary creation action instead. */
   showAddShiftButton?: boolean;
 }
@@ -34,6 +36,7 @@ export default function AppHeader({
   onDateChange,
   dateRange,
   onDateRangeChange,
+  dateRangeShowAllTime,
   filterExtra,
   actionsExtra,
   showAddShiftButton = true,
@@ -57,6 +60,9 @@ export default function AppHeader({
           </NavLink>
           <NavLink to="/dashboard" className={tabClass}>
             Dashboard
+          </NavLink>
+          <NavLink to="/coach-hours" className={tabClass}>
+            Group Hours
           </NavLink>
           {me?.admin?.role === 'ADMIN' && (
             <NavLink to="/payroll" className={tabClass}>
@@ -86,7 +92,7 @@ export default function AppHeader({
           className="rounded-md border border-slate-300 px-3 py-1.5 text-sm w-56"
         />
         {dateRange && onDateRangeChange ? (
-          <DateRangePicker value={dateRange} onChange={onDateRangeChange} />
+          <DateRangePicker value={dateRange} onChange={onDateRangeChange} showAllTime={dateRangeShowAllTime} />
         ) : (
           date !== undefined && (
             <input

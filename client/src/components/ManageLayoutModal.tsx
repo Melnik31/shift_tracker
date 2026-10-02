@@ -310,6 +310,19 @@ function LocationCard({
                 <div className="flex items-center gap-2">
                   <EditableName value={sr.label} onSave={(label) => mutations.updateSubRow.mutate({ id: sr.id, label })} />
                   <span className="text-xs text-slate-400">({DATA_TYPE_INFO[sr.dataType].label})</span>
+                  {sr.dataType === 'BADGE' && (
+                    <label
+                      className="flex items-center gap-1 text-xs text-slate-500 cursor-pointer"
+                      title="Use this field as the Group for the Coach Group Hours report"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={sr.isGroupField}
+                        onChange={(e) => mutations.updateSubRow.mutate({ id: sr.id, isGroupField: e.target.checked })}
+                      />
+                      Group field
+                    </label>
+                  )}
                 </div>
                 <div className="flex items-center gap-1">
                   <ReorderButtons

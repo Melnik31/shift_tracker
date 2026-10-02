@@ -230,13 +230,35 @@ router.patch('/subrows/:id', async (req, res) => {
   const existing = await subRowInScope(req.params.id, workspaceId, scope);
   if (!existing) return res.status(404).json({ error: 'SubRow not found' });
 
-  const { label, config } = req.body ?? {};
-  const subRow = await prisma.subRow.update({
-    where: { id: existing.id },
-    data: {
-      ...(label !== undefined ? { label } : {}),
-      ...(config !== undefined ? { config: JSON.stringify(config) } : {}),
-    },
+  const { label, config, isGroupField } = req.body ?? {};
+  if (isGroupField !== undefined) {
+    if (typeof isGroupField !== 'boolean') {
+      return res.status(400).json({ error: 'isGroupField must be a boolean' });
+    }
+    if (isGroupField && existing.dataType !== 'BADGE') {
+      return res.status(400).json({ error: 'Only a BADGE sub-row can be the group field' });
+    }
+  }
+
+  const subRow = await prisma.$transaction(async (tx) => {
+    // Setting a new group field for this Location unsets any previous one
+    // in the same transaction — at most one true per Location (see
+    // isGroupField's comment in schema.prisma; a partial unique index is
+    // the hard backstop if this ever races).
+    if (isGroupField === true) {
+      await tx.subRow.updateMany({
+        where: { locationId: existing.locationId, isGroupField: true, NOT: { id: existing.id } },
+        data: { isGroupField: false },
+      });
+    }
+    return tx.subRow.update({
+      where: { id: existing.id },
+      data: {
+        ...(label !== undefined ? { label } : {}),
+        ...(config !== undefined ? { config: JSON.stringify(config) } : {}),
+        ...(isGroupField !== undefined ? { isGroupField } : {}),
+      },
+    });
   });
   res.json(subRow);
 });

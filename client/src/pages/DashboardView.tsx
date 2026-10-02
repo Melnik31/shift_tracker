@@ -7,7 +7,7 @@ import { useOverview } from '../hooks/useOverview';
 import { colorForEmployee, initials } from '../lib/colors';
 import { toMinutes, fromMinutes, formatHours, formatTime12h } from '../lib/time';
 import { OPERATIONAL_START, OPERATIONAL_END, SESSION_TYPE_COLORS } from '../lib/constants';
-import { DateRange, defaultDateRange } from '../lib/dateRange';
+import { DateRange, defaultDateRange, formatPeriodLabel } from '../lib/dateRange';
 import { EMPLOYMENT_TYPES, EmploymentType, OverviewEmployee, OverviewDay } from '../lib/types';
 
 const NO_TYPE_COLOR = '#94a3b8'; // slate-400, for shifts with no sessionType set
@@ -274,18 +274,6 @@ export default function DashboardView() {
       </main>
     </div>
   );
-}
-
-function formatPeriodLabel(range: DateRange): string {
-  const start = new Date(range.start + 'T00:00:00');
-  if (range.start === range.end) {
-    return start.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  }
-  const end = new Date(range.end + 'T00:00:00');
-  const sameYear = start.getFullYear() === end.getFullYear();
-  const startLabel = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: sameYear ? undefined : 'numeric' });
-  const endLabel = end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-  return `${startLabel} – ${endLabel}`;
 }
 
 function StatCard({

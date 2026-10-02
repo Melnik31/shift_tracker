@@ -21,20 +21,28 @@ router.get('/', async (req, res) => {
   res.json({ colors });
 });
 
-// POST /api/badge-colors { color } — saves a new quick-pick color. Silently
-// no-ops (200, not 409) if this exact color is already saved — the picker
-// just wants "make sure this is in the list," not a strict create.
+// POST /api/badge-colors { color, label } — saves a new named quick-pick
+// color. `label` is required: an unnamed preset would have nothing for the
+// picker to auto-fill into the badge's text field when selected (see
+// CellFieldEditor.tsx). Silently no-ops (200, not 409) if this exact color
+// is already saved — the picker just wants "make sure this is in the
+// list," not a strict create; renaming an existing preset isn't supported
+// here (delete + re-save covers it, consistent with there being no other
+// rename affordance for saved colors).
 router.post('/', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
-  const { color } = req.body ?? {};
+  const { color, label } = req.body ?? {};
   if (typeof color !== 'string' || !HEX_COLOR.test(color)) {
     return res.status(400).json({ error: 'color must be a 6-digit hex string, e.g. #ff6b35' });
+  }
+  if (typeof label !== 'string' || !label.trim()) {
+    return res.status(400).json({ error: 'label is required' });
   }
 
   const existing = await prisma.savedBadgeColor.findUnique({ where: { workspaceId_color: { workspaceId, color } } });
   if (existing) return res.status(200).json(existing);
 
-  const saved = await prisma.savedBadgeColor.create({ data: { workspaceId, color } });
+  const saved = await prisma.savedBadgeColor.create({ data: { workspaceId, color, label: label.trim() } });
   res.status(201).json(saved);
 });
 

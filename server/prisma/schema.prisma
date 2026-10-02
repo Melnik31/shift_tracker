@@ -225,6 +225,15 @@ model SubRow {
   dataType   String
   sortOrder  Int      @default(0)
   config     String   @default("{}") // type-specific JSON, e.g. badge color palette
+  // True on at most one BADGE sub-row per Location — the admin's
+  // designation of "this is the Group field" for the Coach Group Hours
+  // report (see lib/groupHours.ts). Settable only when dataType === 'BADGE'
+  // (enforced in routes/layout.ts's PATCH /subrows/:id, not here). At most
+  // one true per Location is enforced two ways: that PATCH handler unsets
+  // any sibling in the same transaction before setting this one true, AND
+  // a hand-added partial unique index in this column's migration (Prisma's
+  // schema DSL has no partial/filtered-index syntax) as the hard backstop.
+  isGroupField Boolean @default(false)
 
   location   Location    @relation(fields: [locationId], references: [id])
   shifts     Shift[]
@@ -290,6 +299,7 @@ model SavedBadgeColor {
   id          String   @id @default(uuid())
   workspaceId String
   color       String   // hex, e.g. "#ff6b35"
+  label       String?  // admin-given name, e.g. "T2 Blue" — nullable so colors saved before this field existed keep working as plain swatches
   createdAt   DateTime @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id])

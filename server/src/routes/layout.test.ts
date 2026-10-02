@@ -118,6 +118,70 @@ describe('layout CRUD (sections/locations/subrows)', () => {
   });
 });
 
+describe('SubRow.isGroupField (Coach Group Hours)', () => {
+  async function makeLocation(agent: Awaited<ReturnType<typeof signupAdmin>>['agent']) {
+    const section = (await agent.post('/api/layout/sections').send({ name: 'Section' })).body;
+    return (await agent.post('/api/layout/locations').send({ sectionId: section.id, name: 'Location' })).body;
+  }
+
+  it('sets a BADGE subrow as the group field and reflects it in GET /api/layout', async () => {
+    const { agent } = await signupAdmin(app);
+    const location = await makeLocation(agent);
+    const tier = (await agent.post('/api/layout/subrows').send({ locationId: location.id, label: 'Tier', dataType: 'BADGE' })).body;
+
+    const patched = await agent.patch(`/api/layout/subrows/${tier.id}`).send({ isGroupField: true });
+    expect(patched.status).toBe(200);
+    expect(patched.body.isGroupField).toBe(true);
+
+    const tree = await agent.get('/api/layout');
+    const subRow = tree.body.sections[0].locations[0].subRows[0];
+    expect(subRow.isGroupField).toBe(true);
+  });
+
+  it('rejects isGroupField: true on a non-BADGE subrow', async () => {
+    const { agent } = await signupAdmin(app);
+    const location = await makeLocation(agent);
+    const status = (await agent.post('/api/layout/subrows').send({ locationId: location.id, label: 'Status', dataType: 'STATUS' })).body;
+
+    const res = await agent.patch(`/api/layout/subrows/${status.id}`).send({ isGroupField: true });
+    expect(res.status).toBe(400);
+  });
+
+  it('setting a second BADGE subrow as the group field unsets the first, within the same Location', async () => {
+    const { agent } = await signupAdmin(app);
+    const location = await makeLocation(agent);
+    const tier = (await agent.post('/api/layout/subrows').send({ locationId: location.id, label: 'Tier', dataType: 'BADGE' })).body;
+    const division = (await agent.post('/api/layout/subrows').send({ locationId: location.id, label: 'Division', dataType: 'BADGE' })).body;
+
+    await agent.patch(`/api/layout/subrows/${tier.id}`).send({ isGroupField: true });
+    await agent.patch(`/api/layout/subrows/${division.id}`).send({ isGroupField: true });
+
+    const tree = await agent.get('/api/layout');
+    const subRows = tree.body.sections[0].locations[0].subRows;
+    expect(subRows.find((s: { id: string }) => s.id === tier.id).isGroupField).toBe(false);
+    expect(subRows.find((s: { id: string }) => s.id === division.id).isGroupField).toBe(true);
+  });
+
+  it('does not unset a group field in a different Location', async () => {
+    const { agent } = await signupAdmin(app);
+    const section = (await agent.post('/api/layout/sections').send({ name: 'Section' })).body;
+    const locationA = (await agent.post('/api/layout/locations').send({ sectionId: section.id, name: 'A' })).body;
+    const locationB = (await agent.post('/api/layout/locations').send({ sectionId: section.id, name: 'B' })).body;
+    const tierA = (await agent.post('/api/layout/subrows').send({ locationId: locationA.id, label: 'Tier', dataType: 'BADGE' })).body;
+    const tierB = (await agent.post('/api/layout/subrows').send({ locationId: locationB.id, label: 'Tier', dataType: 'BADGE' })).body;
+
+    await agent.patch(`/api/layout/subrows/${tierA.id}`).send({ isGroupField: true });
+    await agent.patch(`/api/layout/subrows/${tierB.id}`).send({ isGroupField: true });
+
+    const tree = await agent.get('/api/layout');
+    const locations = tree.body.sections[0].locations;
+    const subRowA = locations.find((l: { id: string }) => l.id === locationA.id).subRows[0];
+    const subRowB = locations.find((l: { id: string }) => l.id === locationB.id).subRows[0];
+    expect(subRowA.isGroupField).toBe(true);
+    expect(subRowB.isGroupField).toBe(true);
+  });
+});
+
 describe('duplicating a location', () => {
   async function makeLocationWithSubRows(agent: Awaited<ReturnType<typeof signupAdmin>>['agent']) {
     const section = (await agent.post('/api/layout/sections').send({ name: 'ICE' })).body;

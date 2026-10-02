@@ -3,6 +3,7 @@ import { prisma } from '../db';
 import { requireRole } from '../middleware/auth';
 import { getEmployeeDaySummaries } from '../lib/employeeShifts';
 import { getWorkspaceRangeOverview } from '../lib/dayOverview';
+import { getEmployeeGroupHours } from '../lib/groupHours';
 import { campusScopeFor, NO_CAMPUS_ASSIGNED } from '../lib/campusScope';
 
 const router = Router();
@@ -52,6 +53,28 @@ router.get('/overview', async (req, res) => {
   const campusId = scope.restricted ? scope.campusId ?? NO_CAMPUS_ASSIGNED : null;
   const overview = await getWorkspaceRangeOverview(workspaceId, start, end, campusId);
   res.json(overview);
+});
+
+// GET /api/analytics/group-hours?employeeId=&start=&end()[&campusId=] — a
+// coach's raw scheduled-hours breakdown by "group" (the admin-designated
+// BADGE sub-row per Location — see SubRow.isGroupField) across every
+// Location they worked in range. Campus-scoped like /overview (not like
+// /breaks): an unrestricted ADMIN/CEO can narrow with ?campusId=, a
+// restricted DIRECTOR/SENIOR_LEAD_INSTRUCTOR is always scoped to their own
+// Campus regardless.
+router.get('/group-hours', async (req, res) => {
+  const workspaceId = req.session.workspaceId!;
+  const scope = campusScopeFor(req);
+  const employeeId = String(req.query.employeeId ?? '');
+  const start = String(req.query.start ?? today());
+  const end = String(req.query.end ?? start);
+
+  const employee = await prisma.employee.findFirst({ where: { id: employeeId, workspaceId } });
+  if (!employee) return res.status(404).json({ error: 'Employee not found' });
+
+  const campusId = scope.restricted ? scope.campusId ?? NO_CAMPUS_ASSIGNED : null;
+  const result = await getEmployeeGroupHours(workspaceId, employeeId, start, end, campusId);
+  res.json(result);
 });
 
 export default router;

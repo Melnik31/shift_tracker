@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 export interface SavedBadgeColor {
   id: string;
   color: string;
+  label: string | null;
   createdAt: string;
 }
 
@@ -22,7 +23,7 @@ export function useBadgeColorMutations() {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['badgeColors'] });
 
   const saveColor = useMutation({
-    mutationFn: (color: string) => api.post<SavedBadgeColor>('/badge-colors', { color }),
+    mutationFn: (vars: { color: string; label: string }) => api.post<SavedBadgeColor>('/badge-colors', vars),
     onSuccess: invalidate,
   });
 

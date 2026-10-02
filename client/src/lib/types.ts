@@ -33,6 +33,7 @@ export interface SubRow {
   dataType: DataType;
   sortOrder: number;
   config: string;
+  isGroupField: boolean;
 }
 
 export interface Location {

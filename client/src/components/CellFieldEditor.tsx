@@ -105,6 +105,8 @@ export default function CellFieldEditor({ dataType, state, onChange, employees, 
       const { data: badgeColorsData } = useBadgeColors();
       const { saveColor, removeColor } = useBadgeColorMutations();
       const colorInputRef = useRef<HTMLInputElement>(null);
+      const [showSaveForm, setShowSaveForm] = useState(false);
+      const [presetName, setPresetName] = useState('');
 
       const savedColors = (badgeColorsData?.colors ?? []).filter((c) => !BADGE_COLORS.includes(c.color));
       const knownColors = [...BADGE_COLORS, ...savedColors.map((c) => c.color)];
@@ -130,27 +132,54 @@ export default function CellFieldEditor({ dataType, state, onChange, employees, 
                 className={`w-6 h-6 rounded-full border-2 ${state.badgeColor === c ? 'border-slate-900' : 'border-transparent'}`}
               />
             ))}
-            {savedColors.map((c) => (
-              <div key={c.id} className="relative group">
-                <button
-                  type="button"
-                  onClick={() => onChange({ ...state, badgeColor: c.color })}
-                  style={{ backgroundColor: c.color }}
-                  className={`w-6 h-6 rounded-full border-2 ${state.badgeColor === c.color ? 'border-slate-900' : 'border-transparent'}`}
-                />
-                <button
-                  type="button"
-                  title="Remove saved color"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeColor.mutate(c.id);
-                  }}
-                  className="absolute -top-1 -right-1 hidden group-hover:flex items-center justify-center w-3.5 h-3.5 rounded-full bg-slate-700 text-white text-[8px] leading-none"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
+            {savedColors.map((c) =>
+              c.label ? (
+                <div key={c.id} className="relative group">
+                  <button
+                    type="button"
+                    title={c.label}
+                    onClick={() => onChange({ ...state, badgeColor: c.color, badgeLabel: c.label as string })}
+                    className={`flex items-center gap-1 pl-1 pr-2 h-6 rounded-full border-2 bg-white text-xs text-slate-700 ${
+                      state.badgeColor === c.color ? 'border-slate-900' : 'border-slate-200'
+                    }`}
+                  >
+                    <span className="w-3.5 h-3.5 rounded-full flex-none" style={{ backgroundColor: c.color }} />
+                    {c.label}
+                  </button>
+                  <button
+                    type="button"
+                    title="Remove saved color"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeColor.mutate(c.id);
+                    }}
+                    className="absolute -top-1 -right-1 hidden group-hover:flex items-center justify-center w-3.5 h-3.5 rounded-full bg-slate-700 text-white text-[8px] leading-none"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <div key={c.id} className="relative group">
+                  <button
+                    type="button"
+                    onClick={() => onChange({ ...state, badgeColor: c.color })}
+                    style={{ backgroundColor: c.color }}
+                    className={`w-6 h-6 rounded-full border-2 ${state.badgeColor === c.color ? 'border-slate-900' : 'border-transparent'}`}
+                  />
+                  <button
+                    type="button"
+                    title="Remove saved color"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeColor.mutate(c.id);
+                    }}
+                    className="absolute -top-1 -right-1 hidden group-hover:flex items-center justify-center w-3.5 h-3.5 rounded-full bg-slate-700 text-white text-[8px] leading-none"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )
+            )}
             <button
               type="button"
               title="Pick a custom color"
@@ -167,14 +196,45 @@ export default function CellFieldEditor({ dataType, state, onChange, employees, 
               className="sr-only"
             />
           </div>
-          {canSaveCurrentColor && (
+          {canSaveCurrentColor && !showSaveForm && (
             <button
               type="button"
-              onClick={() => saveColor.mutate(state.badgeColor)}
+              onClick={() => {
+                setPresetName(state.badgeLabel);
+                setShowSaveForm(true);
+              }}
               className="mt-1.5 text-xs text-blue-700 hover:text-blue-900 font-medium"
             >
               + Save this color for quick selection
             </button>
+          )}
+          {canSaveCurrentColor && showSaveForm && (
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <input
+                autoFocus
+                value={presetName}
+                onChange={(e) => setPresetName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setShowSaveForm(false);
+                }}
+                placeholder="Name this color"
+                className="flex-1 rounded-md border border-slate-300 px-2 py-1 text-xs"
+              />
+              <button
+                type="button"
+                disabled={!presetName.trim()}
+                onClick={() => {
+                  saveColor.mutate({ color: state.badgeColor, label: presetName.trim() });
+                  setShowSaveForm(false);
+                }}
+                className="text-xs font-medium text-blue-700 hover:text-blue-900 disabled:text-slate-300"
+              >
+                Save
+              </button>
+              <button type="button" onClick={() => setShowSaveForm(false)} className="text-xs text-slate-400 hover:text-slate-600">
+                Cancel
+              </button>
+            </div>
           )}
         </div>
       );

@@ -1,12 +1,21 @@
 import { DateRange, DateRangePreset, rangeForPreset } from '../lib/dateRange';
 
-const PRESETS: { key: Exclude<DateRangePreset, 'custom'>; label: string }[] = [
+const PRESETS: { key: Exclude<DateRangePreset, 'custom' | 'all'>; label: string }[] = [
   { key: 'today', label: 'Today' },
   { key: 'week', label: 'This Week' },
   { key: 'month', label: 'This Month' },
 ];
 
-export default function DateRangePicker({ value, onChange }: { value: DateRange; onChange: (r: DateRange) => void }) {
+export default function DateRangePicker({
+  value,
+  onChange,
+  showAllTime = false,
+}: {
+  value: DateRange;
+  onChange: (r: DateRange) => void;
+  /** Adds an "All time" preset button — opt-in, since most pages (e.g. the daily schedule Matrix/Dashboard) have no use for an unbounded range. */
+  showAllTime?: boolean;
+}) {
   function selectPreset(preset: Exclude<DateRangePreset, 'custom'>) {
     onChange({ preset, ...rangeForPreset(preset) });
   }
@@ -14,6 +23,16 @@ export default function DateRangePicker({ value, onChange }: { value: DateRange;
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <div className="flex items-center border border-slate-300 rounded-md overflow-hidden">
+        {showAllTime && (
+          <button
+            onClick={() => selectPreset('all')}
+            className={`px-3 py-1.5 text-sm border-r border-slate-300 ${
+              value.preset === 'all' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            All Time
+          </button>
+        )}
         {PRESETS.map((p) => (
           <button
             key={p.key}
