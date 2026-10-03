@@ -52,17 +52,14 @@ export default function CoachGroupHours() {
   // and hours the coach worked with that specific group are shown — the
   // header total is recomputed from whatever's currently visible, so
   // filtering down to one group shows exactly that group's hours as the total.
+  // "Ungrouped" shifts (no group label) are left out of both the list and the total.
   const visibleGroups = useMemo(() => {
     const term = groupSearch.trim().toLowerCase();
-    const groups = data?.groups ?? [];
+    const groups = (data?.groups ?? []).filter((g) => g.group !== 'Ungrouped');
     if (!term) return groups;
     return groups.filter((g) => g.group.toLowerCase().includes(term));
   }, [data?.groups, groupSearch]);
-  // "Ungrouped" hours stay listed in the table but aren't counted toward the total.
-  const visibleTotalHours = useMemo(
-    () => visibleGroups.reduce((sum, g) => (g.group === 'Ungrouped' ? sum : sum + g.hours), 0),
-    [visibleGroups]
-  );
+  const visibleTotalHours = useMemo(() => visibleGroups.reduce((sum, g) => sum + g.hours, 0), [visibleGroups]);
 
   function backToList() {
     setSelectedEmployeeId(null);
@@ -149,12 +146,11 @@ export default function CoachGroupHours() {
               </thead>
               <tbody>
                 {visibleGroups.map((g) => (
-                  <tr key={g.group} className={g.group === 'Ungrouped' ? 'text-slate-400' : ''}>
+                  <tr key={g.group}>
                     <td className="px-5 py-2">
                       <span className="inline-flex items-center gap-2">
                         {g.color && <span className="w-2.5 h-2.5 rounded-full flex-none" style={{ backgroundColor: g.color }} />}
                         {g.group}
-                        {g.group === 'Ungrouped' && <span className="text-xs text-slate-400">(not in total)</span>}
                       </span>
                     </td>
                     <td className="px-5 py-2 text-right">{g.shiftCount}</td>
@@ -164,7 +160,7 @@ export default function CoachGroupHours() {
                 {visibleGroups.length === 0 && (
                   <tr>
                     <td colSpan={3} className="px-5 py-4 text-center text-slate-400">
-                      {groupSearch.trim() ? `No group matches "${groupSearch.trim()}".` : 'No shifts in this date range.'}
+                      {groupSearch.trim() ? `No group matches "${groupSearch.trim()}".` : 'No grouped shifts in this date range.'}
                     </td>
                   </tr>
                 )}
