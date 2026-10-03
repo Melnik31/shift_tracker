@@ -58,7 +58,11 @@ export default function CoachGroupHours() {
     if (!term) return groups;
     return groups.filter((g) => g.group.toLowerCase().includes(term));
   }, [data?.groups, groupSearch]);
-  const visibleTotalHours = useMemo(() => visibleGroups.reduce((sum, g) => sum + g.hours, 0), [visibleGroups]);
+  // "Ungrouped" hours stay listed in the table but aren't counted toward the total.
+  const visibleTotalHours = useMemo(
+    () => visibleGroups.reduce((sum, g) => (g.group === 'Ungrouped' ? sum : sum + g.hours), 0),
+    [visibleGroups]
+  );
 
   function backToList() {
     setSelectedEmployeeId(null);
@@ -150,6 +154,7 @@ export default function CoachGroupHours() {
                       <span className="inline-flex items-center gap-2">
                         {g.color && <span className="w-2.5 h-2.5 rounded-full flex-none" style={{ backgroundColor: g.color }} />}
                         {g.group}
+                        {g.group === 'Ungrouped' && <span className="text-xs text-slate-400">(not in total)</span>}
                       </span>
                     </td>
                     <td className="px-5 py-2 text-right">{g.shiftCount}</td>

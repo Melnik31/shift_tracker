@@ -117,6 +117,7 @@ describe('coach group hours (SubRow.isGroupField aggregation)', () => {
 
     const res = await agent.get('/api/analytics/group-hours').query({ employeeId: coach.id, start: '2026-08-01', end: '2026-08-31' });
     expect(res.body.groups).toEqual([{ group: 'Ungrouped', color: null, hours: 2, shiftCount: 1 }]);
+    expect(res.body.totalHours).toBe(0); // Ungrouped is listed, but not counted toward the total
   });
 
   it('buckets as "Ungrouped" when the group field exists but its row was left blank that block', async () => {

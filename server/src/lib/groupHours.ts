@@ -144,7 +144,8 @@ export async function getEmployeeGroupHours(
     .map(([group, { color, minutes, shiftCount }]) => ({ group, color: group === UNGROUPED ? null : color, hours: round2(minutes / 60), shiftCount }))
     .sort((a, b) => (a.group === UNGROUPED ? 1 : b.group === UNGROUPED ? -1 : b.hours - a.hours));
 
-  const totalHours = round2(groups.reduce((sum, g) => sum + g.hours, 0));
+  // Ungrouped hours are listed but deliberately not counted toward the total.
+  const totalHours = round2(groups.reduce((sum, g) => (g.group === UNGROUPED ? sum : sum + g.hours), 0));
 
   return { employee, start, end, totalHours, groups };
 }
