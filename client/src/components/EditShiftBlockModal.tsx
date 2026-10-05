@@ -9,11 +9,13 @@ import CellFieldEditor, {
 } from './CellFieldEditor';
 import { useLayout } from '../hooks/useLayout';
 import { useEmployees } from '../hooks/useEmployees';
+import { useAuth } from '../hooks/useAuth';
+import { useCampuses } from '../hooks/useCampuses';
 import { useEmployeesOff } from '../hooks/useTimeOff';
 import { useShifts } from '../hooks/useShifts';
 import { api } from '../lib/api';
 import { useConfirm } from './ConfirmProvider';
-import { Shift, SESSION_TYPES, SubRow } from '../lib/types';
+import { Employee, Shift, SESSION_TYPES, SubRow } from '../lib/types';
 import { DATA_TYPE_INFO } from '../lib/constants';
 import { collectStaffFieldLabels } from '../lib/staffRoles';
 import { timeRangesOverlap } from '../lib/lanes';
@@ -45,8 +47,16 @@ export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSa
   const location = section?.locations.find((l) => l.id === subRow.locationId) ?? null;
   const { data: employeesData } = useEmployees(section?.campusId);
   const offEmployeeIds = useEmployeesOff(date, section?.campusId);
+  // Only Admin/CEO may add coaches from other campuses (and only via the
+  // picker's explicit "Show all coaches" button) — the rest never load them.
+  const { data: me } = useAuth();
+  const canCrossCampus = me?.admin?.role === 'ADMIN' || me?.admin?.role === 'CEO';
+  const { data: allEmployeesData } = useEmployees(null, canCrossCampus);
+  const { data: campusData } = useCampuses();
   const subRows = location?.subRows ?? [];
   const employees = employeesData?.employees ?? [];
+  const otherCampusEmployees = canCrossCampus ? (allEmployeesData?.employees ?? []).filter((e) => !employees.some((x) => x.id === e.id)) : [];
+  const campusName = campusData?.campuses.find((c) => c.id === section?.campusId)?.name;
   const shifts = shiftsData?.shifts ?? [];
   const knownStaffLabels = useMemo(() => collectStaffFieldLabels(layout?.sections ?? []), [layout]);
 
@@ -55,6 +65,16 @@ export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSa
 
   function memberShift(subRowId: string): Shift | undefined {
     return shifts.find((s) => s.subRowId === subRowId && timeRangesOverlap(s.startTime, s.endTime, blockStart, blockEnd));
+  }
+
+  // Coaches already on this row from another campus (an Admin/CEO put them
+  // there): kept visible so anyone can see and remove them.
+  function assignedElsewhere(subRowId: string): Employee[] {
+    return (memberShift(subRowId)?.cellValues[0]?.staffAssignments ?? []).map((a) => a.employee).filter((e) => !employees.some((x) => x.id === e.id));
+  }
+  function crossCampusPatch(subRowId: string, staffIds: string[]) {
+    const outsiders = new Set([...otherCampusEmployees, ...assignedElsewhere(subRowId)].map((e) => e.id));
+    return canCrossCampus && staffIds.some((id) => outsiders.has(id)) ? { allowCrossCampus: true } : {};
   }
 
   // Lazy initializer runs once on mount. By the time this modal can open
@@ -166,7 +186,7 @@ export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSa
         const state = rowState(sr.id);
         if (member) {
           await api.patch(`/shifts/${member.id}`, { startTime, endTime, sessionType: sessionType || null, cancelled });
-          await api.patch(`/shifts/cells/${member.cellValues[0].id}`, cellFieldPayload(sr.dataType, state));
+          await api.patch(`/shifts/cells/${member.cellValues[0].id}`, { ...cellFieldPayload(sr.dataType, state), ...crossCampusPatch(sr.id, state.staffIds) });
         } else if (isCellFieldStateFilled(sr.dataType, state)) {
           const created = await api.post<Shift>('/shifts', {
             subRowId: sr.id,
@@ -176,7 +196,7 @@ export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSa
             sessionType: sessionType || null,
             blockId: shift.blockId,
           });
-          await api.patch(`/shifts/cells/${created.cellValues[0].id}`, cellFieldPayload(sr.dataType, state));
+          await api.patch(`/shifts/cells/${created.cellValues[0].id}`, { ...cellFieldPayload(sr.dataType, state), ...crossCampusPatch(sr.id, state.staffIds) });
         }
       }
       onSaved();
@@ -293,6 +313,9 @@ export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSa
                     subRowLabel={sr.label}
                     knownStaffLabels={knownStaffLabels}
                     offEmployeeIds={offEmployeeIds}
+                    otherCampusEmployees={otherCampusEmployees}
+                    assignedElsewhere={assignedElsewhere(sr.id)}
+                    campusName={campusName}
                   />
                 )}
               </div>

@@ -5,12 +5,13 @@ import { prisma } from '../db';
 import { requireRole } from '../middleware/auth';
 import { STATUS_VALUES, SESSION_TYPES } from '../types';
 import { rejectIfLocked } from '../lib/payrollLock';
-import { campusScopeFor, employeeCampusMatch, NO_CAMPUS_ASSIGNED } from '../lib/campusScope';
+import { campusScopeFor, canAssignAcrossCampuses, employeeCampusMatch, NO_CAMPUS_ASSIGNED } from '../lib/campusScope';
 import { subRowInScope, shiftInScope, cellValueInScope, fileUploadInScope, campusIdForSubRow } from '../lib/ownership';
 import { uploadFile, deleteFile } from '../lib/storage';
 import { approvedOffOn } from '../lib/timeOff';
 
 const router = Router();
+const CROSS_CAMPUS_FORBIDDEN = { error: 'Only Admin/CEO can assign coaches from other campuses.' };
 // Campus scoping is enforced per-handler below via campusScopeFor/the
 // lib/ownership.ts helpers: ADMIN/CEO see every Campus in the workspace,
 // DIRECTOR/SENIOR_LEAD_INSTRUCTOR only their assigned Campus.
@@ -113,8 +114,9 @@ router.post('/', async (req, res) => {
 router.post('/bulk', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
   const scope = campusScopeFor(req);
-  const { date, startTime, endTime, sessionType, rows } = req.body ?? {};
+  const { date, startTime, endTime, sessionType, rows, allowCrossCampus } = req.body ?? {};
   if (!date || !startTime || !endTime) return res.status(400).json({ error: 'date, startTime, endTime are required' });
+  if (allowCrossCampus === true && !canAssignAcrossCampuses(req)) return res.status(403).json(CROSS_CAMPUS_FORBIDDEN);
   if (sessionType !== undefined && sessionType !== null && !isValidSessionType(sessionType)) {
     return res.status(400).json({ error: `sessionType must be one of ${SESSION_TYPES.join(', ')}` });
   }
@@ -167,7 +169,12 @@ router.post('/bulk', async (req, res) => {
     if (subRow.dataType === 'STAFF' && Array.isArray(row.staffEmployeeIds)) {
       const targetCampusId = await campusIdForSubRow(subRowId);
       const validEmployees = await prisma.employee.findMany({
-        where: { id: { in: row.staffEmployeeIds }, workspaceId, ...employeeCampusMatch(targetCampusId), timeOffRequests: { none: approvedOffOn(date) } },
+        where: {
+          id: { in: row.staffEmployeeIds },
+          workspaceId,
+          ...(allowCrossCampus === true ? {} : employeeCampusMatch(targetCampusId)),
+          timeOffRequests: { none: approvedOffOn(date) },
+        },
         select: { id: true },
       });
       const validIds = new Set(validEmployees.map((e) => e.id));
@@ -234,7 +241,8 @@ router.patch('/cells/:id', async (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Cell not found' });
   if (await rejectIfLocked(req, res, workspaceId, existing.shift.date)) return;
 
-  const { textValue, badgeLabel, badgeColor, statusValue, linkUrl, staffEmployeeIds } = req.body ?? {};
+  const { textValue, badgeLabel, badgeColor, statusValue, linkUrl, staffEmployeeIds, allowCrossCampus } = req.body ?? {};
+  if (allowCrossCampus === true && !canAssignAcrossCampuses(req)) return res.status(403).json(CROSS_CAMPUS_FORBIDDEN);
 
   if (statusValue !== undefined && statusValue !== null && !STATUS_VALUES.includes(statusValue)) {
     return res.status(400).json({ error: `statusValue must be one of ${STATUS_VALUES.join(', ')}` });
@@ -253,8 +261,18 @@ router.patch('/cells/:id', async (req, res) => {
 
   if (Array.isArray(staffEmployeeIds)) {
     const targetCampusId = await campusIdForSubRow(existing.subRowId);
+    // Coaches already on this cell stay assignable even when they're from
+    // another campus (an Admin/CEO put them there on purpose) — otherwise a
+    // Director saving the shift would silently un-assign them, since this
+    // handler replaces the whole set.
+    const currentIds = (await prisma.cellStaffAssignment.findMany({ where: { cellValueId: existing.id }, select: { employeeId: true } })).map((a) => a.employeeId);
     const validEmployees = await prisma.employee.findMany({
-      where: { id: { in: staffEmployeeIds }, workspaceId, ...employeeCampusMatch(targetCampusId), timeOffRequests: { none: approvedOffOn(existing.shift.date) } },
+      where: {
+        id: { in: staffEmployeeIds },
+        workspaceId,
+        ...(allowCrossCampus === true ? {} : { OR: [employeeCampusMatch(targetCampusId), { id: { in: currentIds } }] }),
+        timeOffRequests: { none: approvedOffOn(existing.shift.date) },
+      },
       select: { id: true },
     });
     const validIds = new Set(validEmployees.map((e) => e.id));

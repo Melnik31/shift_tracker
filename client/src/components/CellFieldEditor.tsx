@@ -87,6 +87,14 @@ interface Props {
   // Employees with approved time off on this shift's date — shown grayed out
   // and can't be newly checked (the server drops them anyway).
   offEmployeeIds?: Set<string>;
+  // Coaches from OTHER campuses, offered only to Admin/CEO and only after the
+  // "Show all coaches" button is pressed on purpose — the picker is
+  // campus-only by default. Picking one asks for confirmation first.
+  otherCampusEmployees?: Employee[];
+  // Coaches already on this shift from another campus (put there by an
+  // Admin/CEO): always listed so they stay visible and can be removed.
+  assignedElsewhere?: Employee[];
+  campusName?: string;
 }
 
 export default function CellFieldEditor({
@@ -99,6 +107,9 @@ export default function CellFieldEditor({
   onKeyDown,
   autoFocus,
   offEmployeeIds,
+  otherCampusEmployees,
+  assignedElsewhere,
+  campusName,
 }: Props) {
   switch (dataType) {
     case 'TEXT':
@@ -297,23 +308,46 @@ export default function CellFieldEditor({
     case 'STAFF': {
       // eslint-disable-next-line react-hooks/rules-of-hooks -- dataType is fixed for the lifetime of a given CellFieldEditor instance (one per SubRow), so this branch, once taken, is taken on every render of that instance.
       const [search, setSearch] = useState('');
-      const roleFiltered = subRowLabel
-        ? employees.filter((e) => employeeVisibleOnStaffField(e.roles, subRowLabel, knownStaffLabels ?? new Set()))
-        : employees;
+      // Always starts off — showing other campuses' coaches is a deliberate act.
+      // eslint-disable-next-line react-hooks/rules-of-hooks -- same reasoning as above.
+      const [showAll, setShowAll] = useState(false);
+      // eslint-disable-next-line react-hooks/rules-of-hooks -- same reasoning as above.
+      const confirm = useConfirm();
+      const byRole = (list: Employee[]) =>
+        subRowLabel ? list.filter((e) => employeeVisibleOnStaffField(e.roles, subRowLabel, knownStaffLabels ?? new Set())) : list;
+      const elsewhere = assignedElsewhere ?? [];
+      const elsewhereIds = new Set(elsewhere.map((e) => e.id));
+      const others = (otherCampusEmployees ?? []).filter((e) => !elsewhereIds.has(e.id));
+      const outsiderIds = new Set([...elsewhere, ...others].map((e) => e.id));
       const term = search.trim().toLowerCase();
+      const roleFiltered = [...byRole(employees), ...elsewhere, ...(showAll ? byRole(others) : [])];
       const visibleEmployees = term ? roleFiltered.filter((e) => e.name.toLowerCase().includes(term)) : roleFiltered;
+      const selectedOutsiders = [...elsewhere, ...others].filter((e) => state.staffIds.includes(e.id));
       return (
         <div>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search employees..."
-            className="w-full mb-1.5 rounded-md border border-slate-300 px-2 py-1 text-sm"
-          />
+          <div className="flex gap-1.5 mb-1.5">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search employees..."
+              className="flex-1 min-w-0 rounded-md border border-slate-300 px-2 py-1 text-sm"
+            />
+            {others.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowAll((v) => !v)}
+                title="Coaches from other campuses can be added to this shift only on purpose"
+                className="flex-shrink-0 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                {showAll ? 'Show campus coaches only' : 'Show all coaches'}
+              </button>
+            )}
+          </div>
           <div className="max-h-36 overflow-y-auto space-y-1">
             {visibleEmployees.map((emp) => {
               const checked = state.staffIds.includes(emp.id);
+              const outsider = outsiderIds.has(emp.id);
               const off = !!offEmployeeIds?.has(emp.id);
               // An already-checked off employee stays uncheckable, so they
               // can be removed — never trapped on the shift.
@@ -328,17 +362,40 @@ export default function CellFieldEditor({
                     type="checkbox"
                     checked={checked}
                     disabled={disabled}
-                    onChange={(e) =>
-                      onChange({ ...state, staffIds: e.target.checked ? [...state.staffIds, emp.id] : state.staffIds.filter((id) => id !== emp.id) })
-                    }
+                    onChange={async (e) => {
+                      const next = e.target.checked;
+                      if (next && outsider) {
+                        const ok = await confirm({
+                          title: `Add ${emp.name} from another campus?`,
+                          message: `${emp.name} isn't assigned to ${campusName ?? 'this campus'}. They'll be scheduled here for this shift only — their campus assignment isn't changed.`,
+                          confirmLabel: 'Add to shift',
+                          destructive: false,
+                        });
+                        if (!ok) return;
+                      }
+                      onChange({ ...state, staffIds: next ? [...state.staffIds, emp.id] : state.staffIds.filter((id) => id !== emp.id) });
+                    }}
                   />
                   <span className={off ? 'line-through' : ''}>{emp.name}</span>
+                  {outsider && (
+                    <span
+                      title={emp.campuses?.length ? `Assigned to: ${emp.campuses.map((c) => c.name).join(', ')}` : 'Not assigned to this campus'}
+                      className="rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[10px] font-medium"
+                    >
+                      {emp.campuses?.length ? emp.campuses.map((c) => c.name).join(', ') : 'Other campus'}
+                    </span>
+                  )}
                   {off && <span className="rounded bg-slate-100 text-slate-500 px-1.5 py-0.5 text-[10px] font-medium">Time off</span>}
                 </label>
               );
             })}
             {visibleEmployees.length === 0 && <p className="text-xs text-slate-400 px-1 py-1">No employees match "{search}"</p>}
           </div>
+          {selectedOutsiders.length > 0 && (
+            <p className="mt-2 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-xs text-amber-800">
+              <span className="font-medium">{selectedOutsiders.map((e) => e.name).join(', ')}</span> {selectedOutsiders.length === 1 ? 'is' : 'are'} from another campus — scheduled on this shift only; their campus assignment isn't changed.
+            </p>
+          )}
         </div>
       );
     }

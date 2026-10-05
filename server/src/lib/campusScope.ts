@@ -60,6 +60,13 @@ export function campusWhere(scope: CampusScope): { campusId?: string } {
 // membership rows at all ("floats" across every campus, same semantics as
 // the old nullable Employee.campusId). Replaces five duplicated
 // OR-null-campusId blocks across routes/employees.ts and routes/shifts.ts.
+// Only unrestricted roles (ADMIN/CEO) may put a coach from another campus on
+// a shift (the `allowCrossCampus` flag on the shift routes). Campus-limited
+// Directors/SLIs never can.
+export function canAssignAcrossCampuses(req: Request): boolean {
+  return !!req.session.role && UNRESTRICTED_ROLES.includes(req.session.role);
+}
+
 export function employeeCampusMatch(campusId: string | null): Prisma.EmployeeWhereInput {
   return {
     OR: [{ campuses: { some: { campusId: campusId ?? NO_CAMPUS_ASSIGNED } } }, { campuses: { none: {} } }],

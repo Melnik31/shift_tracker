@@ -8,10 +8,11 @@ import { Employee, EmploymentType } from '../lib/types';
 // useLayout's campusId pattern. Unrelated to an employee's own (possibly
 // multiple) campus memberships below — this is just a single-value query
 // filter.
-export function useEmployees(campusId?: string | null) {
+export function useEmployees(campusId?: string | null, enabled = true) {
   return useQuery<{ employees: Employee[] }>({
     queryKey: ['employees', campusId ?? null],
     queryFn: () => api.get(`/employees${campusId ? `?campusId=${campusId}` : ''}`),
+    enabled,
   });
 }
 

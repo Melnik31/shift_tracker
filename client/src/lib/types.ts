@@ -134,6 +134,9 @@ export interface BulkShiftRequest {
   endTime: string;
   sessionType?: string | null;
   rows: BulkShiftRow[];
+  // Admin/CEO only: lets rows include coaches from other campuses (see
+  // the "Show all coaches" button in the staff picker).
+  allowCrossCampus?: boolean;
 }
 
 export interface BulkShiftResponse {

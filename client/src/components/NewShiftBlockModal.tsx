@@ -3,6 +3,8 @@ import SidePanel from './SidePanel';
 import CellFieldEditor, { CellFieldState, cellFieldPayload, emptyCellFieldState, isCellFieldStateFilled } from './CellFieldEditor';
 import { useLayout } from '../hooks/useLayout';
 import { useEmployees } from '../hooks/useEmployees';
+import { useAuth } from '../hooks/useAuth';
+import { useCampuses } from '../hooks/useCampuses';
 import { useEmployeesOff } from '../hooks/useTimeOff';
 import { useBulkShiftMutation } from '../hooks/useShifts';
 import { api } from '../lib/api';
@@ -28,6 +30,12 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
   const [locationId, setLocationId] = useState('');
   const section = sections.find((s) => s.id === sectionId);
   const { data: employeesData } = useEmployees(section?.campusId);
+  // Only Admin/CEO may add coaches from other campuses (and only via the
+  // picker's explicit "Show all coaches" button) — the rest never load them.
+  const { data: me } = useAuth();
+  const canCrossCampus = me?.admin?.role === 'ADMIN' || me?.admin?.role === 'CEO';
+  const { data: allEmployeesData } = useEmployees(null, canCrossCampus);
+  const { data: campusData } = useCampuses();
   const offEmployeeIds = useEmployeesOff(blockDate, section?.campusId);
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('17:00');
@@ -42,6 +50,8 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
   const location = locations.find((l) => l.id === locationId);
   const subRows = location?.subRows ?? [];
   const employees = employeesData?.employees ?? [];
+  const otherCampusEmployees = canCrossCampus ? (allEmployeesData?.employees ?? []).filter((e) => !employees.some((x) => x.id === e.id)) : [];
+  const campusName = campusData?.campuses.find((c) => c.id === section?.campusId)?.name;
   const knownStaffLabels = useMemo(() => collectStaffFieldLabels(layout?.sections ?? []), [layout]);
 
   // Defaults End to an hour after whatever Start the user just picked —
@@ -88,7 +98,16 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
 
     setSubmitting(true);
     try {
-      const res = await bulkCreate.mutateAsync({ date: blockDate, startTime, endTime, sessionType: sessionType || null, rows });
+      const crossIds = new Set(otherCampusEmployees.map((e) => e.id));
+      const allowCrossCampus = canCrossCampus && rows.some((r) => r.staffEmployeeIds?.some((id) => crossIds.has(id)));
+      const res = await bulkCreate.mutateAsync({
+        date: blockDate,
+        startTime,
+        endTime,
+        sessionType: sessionType || null,
+        rows,
+        ...(allowCrossCampus ? { allowCrossCampus: true } : {}),
+      });
       for (const c of res.created) {
         const file = rowFiles[c.subRowId];
         if (file) {
@@ -247,6 +266,8 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
                     subRowLabel={sr.label}
                     knownStaffLabels={knownStaffLabels}
                     offEmployeeIds={offEmployeeIds}
+                    otherCampusEmployees={otherCampusEmployees}
+                    campusName={campusName}
                   />
                 )}
               </div>
