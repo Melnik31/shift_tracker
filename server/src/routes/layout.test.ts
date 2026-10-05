@@ -285,3 +285,38 @@ describe('layout role gating (requireRole DIRECTOR/ADMIN/CEO)', () => {
     }
   });
 });
+
+describe('GET /api/layout/impact (removal warning counts)', () => {
+  async function setup(agent: Awaited<ReturnType<typeof signupAdmin>>['agent']) {
+    const section = (await agent.post('/api/layout/sections').send({ name: 'Ice' })).body;
+    const location = (await agent.post('/api/layout/locations').send({ sectionId: section.id, name: 'Rink A' })).body;
+    const notes = (await agent.post('/api/layout/subrows').send({ locationId: location.id, label: 'Notes', dataType: 'TEXT' })).body;
+    const other = (await agent.post('/api/layout/subrows').send({ locationId: location.id, label: 'Other', dataType: 'TEXT' })).body;
+    // One past shift and one far-future shift on `notes`; one future shift on `other`.
+    await agent.post('/api/shifts').send({ subRowId: notes.id, date: '2020-01-01', startTime: '09:00', endTime: '10:00' });
+    await agent.post('/api/shifts').send({ subRowId: notes.id, date: '2099-01-01', startTime: '09:00', endTime: '10:00' });
+    await agent.post('/api/shifts').send({ subRowId: other.id, date: '2099-01-02', startTime: '09:00', endTime: '10:00' });
+    return { section, location, notes, other };
+  }
+
+  it('counts the shifts a section, location, or sub-row removal would delete, split into upcoming', async () => {
+    const { agent } = await signupAdmin(app);
+    const { section, location, notes, other } = await setup(agent);
+
+    const bySection = await agent.get('/api/layout/impact').query({ kind: 'section', id: section.id });
+    expect(bySection.body).toEqual({ shifts: 3, upcoming: 2 });
+    expect((await agent.get('/api/layout/impact').query({ kind: 'location', id: location.id })).body).toEqual({ shifts: 3, upcoming: 2 });
+    expect((await agent.get('/api/layout/impact').query({ kind: 'subrow', id: notes.id })).body).toEqual({ shifts: 2, upcoming: 1 });
+    expect((await agent.get('/api/layout/impact').query({ kind: 'subrow', id: other.id })).body).toEqual({ shifts: 1, upcoming: 1 });
+  });
+
+  it('rejects a bad kind, 404s unknown ids, and hides other workspaces', async () => {
+    const { agent } = await signupAdmin(app, { workspaceCode: 'IMP1' });
+    const { agent: other } = await signupAdmin(app, { workspaceCode: 'IMP2' });
+    const { section } = await setup(agent);
+
+    expect((await agent.get('/api/layout/impact').query({ kind: 'nope', id: section.id })).status).toBe(400);
+    expect((await agent.get('/api/layout/impact').query({ kind: 'section', id: 'missing' })).status).toBe(404);
+    expect((await other.get('/api/layout/impact').query({ kind: 'section', id: section.id })).status).toBe(404);
+  });
+});

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../db';
 import { requireRole } from '../middleware/auth';
 import { DATA_TYPES, ONBOARDING_COMPLETE_STEP } from '../types';
@@ -87,6 +88,38 @@ router.patch('/sections/:id', async (req, res) => {
 
   const section = await prisma.section.update({ where: { id: existing.id }, data });
   res.json(section);
+});
+
+// GET /api/layout/impact?kind=section|location|subrow&id= — how many existing
+// shifts a removal would permanently delete, so the Manage Layout confirm can
+// say so concretely. Same campus scoping as the delete routes themselves (a
+// denied or unknown id is a 404).
+router.get('/impact', async (req, res) => {
+  const workspaceId = req.session.workspaceId!;
+  const scope = campusScopeFor(req);
+  const kind = String(req.query.kind ?? '');
+  const id = String(req.query.id ?? '');
+
+  let subRowFilter: Prisma.SubRowWhereInput;
+  if (kind === 'section') {
+    if (!(await sectionInScope(id, workspaceId, scope))) return res.status(404).json({ error: 'Section not found' });
+    subRowFilter = { location: { sectionId: id } };
+  } else if (kind === 'location') {
+    if (!(await locationInScope(id, workspaceId, scope))) return res.status(404).json({ error: 'Location not found' });
+    subRowFilter = { locationId: id };
+  } else if (kind === 'subrow') {
+    if (!(await subRowInScope(id, workspaceId, scope))) return res.status(404).json({ error: 'SubRow not found' });
+    subRowFilter = { id };
+  } else {
+    return res.status(400).json({ error: 'kind must be section, location, or subrow' });
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const [shifts, upcoming] = await Promise.all([
+    prisma.shift.count({ where: { workspaceId, subRow: subRowFilter } }),
+    prisma.shift.count({ where: { workspaceId, subRow: subRowFilter, date: { gte: today } } }),
+  ]);
+  res.json({ shifts, upcoming });
 });
 
 router.delete('/sections/:id', async (req, res) => {
