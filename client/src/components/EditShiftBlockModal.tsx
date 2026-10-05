@@ -12,6 +12,7 @@ import { useEmployees } from '../hooks/useEmployees';
 import { useEmployeesOff } from '../hooks/useTimeOff';
 import { useShifts } from '../hooks/useShifts';
 import { api } from '../lib/api';
+import { useConfirm } from './ConfirmProvider';
 import { Shift, SESSION_TYPES, SubRow } from '../lib/types';
 import { DATA_TYPE_INFO } from '../lib/constants';
 import { collectStaffFieldLabels } from '../lib/staffRoles';
@@ -83,6 +84,7 @@ export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSa
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
+  const confirm = useConfirm();
 
   function rowState(subRowId: string) {
     return rowStates[subRowId] ?? emptyCellFieldState();
@@ -91,20 +93,21 @@ export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSa
     setRowStates((prev) => ({ ...prev, [subRowId]: next }));
   }
 
-  async function handleFileDelete(fileId: string) {
+  async function handleFileDelete(fileId: string, filename: string) {
+    if (!(await confirm({ title: `Delete "${filename}"?`, message: 'The attachment will be permanently removed.' }))) return;
     await api.delete(`/shifts/files/${fileId}`);
     onSaved();
   }
 
   async function handleRemoveRow(subRowId: string, memberShiftId: string) {
-    if (!confirm('Remove this row from the block?')) return;
+    if (!(await confirm({ title: 'Remove this row from the block?', message: 'Its content for this shift is deleted. This cannot be undone.', confirmLabel: 'Remove row' }))) return;
     await api.delete(`/shifts/${memberShiftId}`);
     setRemovedSubRowIds((prev) => new Set(prev).add(subRowId));
     onSaved();
   }
 
   async function handleDeleteBlock() {
-    if (!confirm('Delete every row in this shift block? This cannot be undone.')) return;
+    if (!(await confirm({ title: 'Delete the entire shift block?', message: 'Every row in this block is permanently deleted. This cannot be undone.', confirmLabel: 'Delete block' }))) return;
     setDeletingAll(true);
     try {
       for (const sr of subRows) {
@@ -268,7 +271,7 @@ export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSa
                             <a href={f.url} target="_blank" rel="noreferrer" className="truncate hover:underline">
                               📎 {f.filename}
                             </a>
-                            <button type="button" onClick={() => handleFileDelete(f.id)} className="text-xs text-red-500 hover:underline ml-2">
+                            <button type="button" onClick={() => handleFileDelete(f.id, f.filename)} className="text-xs text-red-500 hover:underline ml-2">
                               ✕
                             </button>
                           </li>

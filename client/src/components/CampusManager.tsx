@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useCampuses, useCampusMutations } from '../hooks/useCampuses';
 import { Campus } from '../lib/types';
+import { useConfirm } from './ConfirmProvider';
 
 // The list + add-form body of campus management, shared by ManageCampusesModal
 // (wraps this in <Modal>) and the onboarding wizard's Campuses step (wraps
@@ -64,6 +65,7 @@ export default function CampusManager() {
 }
 
 function CampusRow({ campus, mutations }: { campus: Campus; mutations: ReturnType<typeof useCampusMutations> }) {
+  const confirm = useConfirm();
   const [error, setError] = useState<string | null>(null);
 
   async function run(action: () => Promise<unknown>, fallback: string) {
@@ -93,12 +95,21 @@ function CampusRow({ campus, mutations }: { campus: Campus; mutations: ReturnTyp
             </button>
           )}
           <button
-            onClick={() =>
+            onClick={async () => {
+              if (
+                campus.active &&
+                !(await confirm({
+                  title: `Deactivate "${campus.name}"?`,
+                  message: 'Its sections and admins are kept, but the campus is hidden from selectors until reactivated.',
+                  confirmLabel: 'Deactivate',
+                }))
+              )
+                return;
               run(
                 () => (campus.active ? mutations.deactivateCampus.mutateAsync(campus.id) : mutations.activateCampus.mutateAsync(campus.id)),
                 'Could not update status'
-              )
-            }
+              );
+            }}
             disabled={campus.isDefault && campus.active}
             title={campus.isDefault && campus.active ? 'Set another campus as default first' : undefined}
             className="text-xs text-red-500 hover:underline disabled:opacity-30 disabled:hover:no-underline"

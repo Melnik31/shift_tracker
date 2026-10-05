@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
+import { useConfirm } from '../components/ConfirmProvider';
 import { EmployeeDayShift, EmployeeDaySummary, EventSubRowInfo } from '../lib/types';
 import { formatTime12h } from '../lib/time';
 import { STATUS_COLORS, SESSION_TYPE_COLORS } from '../lib/constants';
@@ -19,6 +20,7 @@ function todayStr() {
 
 export default function MyShifts() {
   const { data: me, logout } = useAuth();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('day');
   const [showRequestModal, setShowRequestModal] = useState(false);
@@ -50,6 +52,7 @@ export default function MyShifts() {
           </button>
           <button
             onClick={async () => {
+              if (!(await confirm({ title: 'Log out?', message: 'You will need your PIN to sign in again.', confirmLabel: 'Log out', destructive: false }))) return;
               await logout();
               navigate('/');
             }}
@@ -111,6 +114,7 @@ export default function MyShifts() {
 function MyTimeOffList({ onRequest }: { onRequest: () => void }) {
   const { data, isLoading } = useMyTimeOff();
   const { cancel } = useMyTimeOffMutations();
+  const confirm = useConfirm();
   const requests = data?.requests ?? [];
 
   if (isLoading) return null;
@@ -145,7 +149,9 @@ function MyTimeOffList({ onRequest }: { onRequest: () => void }) {
             )}
             {r.status === 'PENDING' && (
               <button
-                onClick={() => cancel.mutate(r.id)}
+                onClick={async () => {
+                  if (await confirm({ title: 'Cancel this time-off request?', message: formatTimeOffRange(r.startDate, r.endDate), confirmLabel: 'Cancel request' })) cancel.mutate(r.id);
+                }}
                 disabled={cancel.isPending}
                 className="mt-2 text-xs text-slate-500 hover:text-red-600 disabled:opacity-50"
               >

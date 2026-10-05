@@ -9,6 +9,7 @@ import {
 } from '../hooks/usePayroll';
 import { colorForEmployee, initials } from '../lib/colors';
 import { formatHours } from '../lib/time';
+import { useConfirm } from '../components/ConfirmProvider';
 import { EMPLOYMENT_TYPES, EmploymentType, ExceptionKind, PayrollAdjustment, PayrollEmployeeSummary, PayrollPeriodReopen } from '../lib/types';
 
 const EXCEPTION_LABELS: Record<ExceptionKind, string> = {
@@ -480,34 +481,30 @@ function AdjustmentsPanel({ adjustments }: { adjustments: PayrollAdjustment[] })
 // distinct from an adjustment, which corrects genuinely locked history
 // without reopening the period. Requires a reason, same as an adjustment.
 function DeletePeriodControl({ onDelete }: { onDelete: () => Promise<unknown> }) {
-  const [confirming, setConfirming] = useState(false);
+  const confirm = useConfirm();
   const [error, setError] = useState<string | null>(null);
 
-  if (!confirming) {
-    return (
-      <button onClick={() => setConfirming(true)} className="text-xs text-red-500 hover:underline">
-        Delete Period
-      </button>
-    );
-  }
-
-  async function confirm() {
+  async function handleClick() {
+    setError(null);
+    if (
+      !(await confirm({
+        title: 'Delete this payroll period?',
+        message: 'Its adjustment and reopen history is deleted too. This cannot be undone.',
+        confirmLabel: 'Delete period',
+      }))
+    )
+      return;
     try {
       await onDelete();
     } catch (err: any) {
       setError(err.message ?? 'Could not delete period');
-      setConfirming(false);
     }
   }
 
   return (
     <span className="flex items-center gap-2 text-xs">
-      <span className="text-slate-500">Delete this period and its adjustment/reopen history?</span>
-      <button onClick={confirm} className="text-red-600 font-medium hover:underline">
-        Confirm
-      </button>
-      <button onClick={() => setConfirming(false)} className="text-slate-500 hover:underline">
-        Cancel
+      <button onClick={handleClick} className="text-red-500 hover:underline">
+        Delete Period
       </button>
       {error && <span className="text-red-600">{error}</span>}
     </span>

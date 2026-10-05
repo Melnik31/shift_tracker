@@ -3,6 +3,7 @@ import Modal from './Modal';
 import { useAdmins, useAdminMutations } from '../hooks/useAdmins';
 import { useCampuses } from '../hooks/useCampuses';
 import { useAuth } from '../hooks/useAuth';
+import { useConfirm } from './ConfirmProvider';
 import { ASSIGNABLE_ADMIN_ROLES, AssignableAdminRole, AdminUserAccount, CAMPUS_SCOPED_ROLES, Campus } from '../lib/types';
 
 function isCampusScoped(role: AssignableAdminRole): boolean {
@@ -41,6 +42,7 @@ function AdminRow({
   isSelf: boolean;
   mutations: ReturnType<typeof useAdminMutations>;
 }) {
+  const confirm = useConfirm();
   const [pendingRole, setPendingRole] = useState<AssignableAdminRole>(admin.role);
   const [campusId, setCampusId] = useState(admin.campus?.id ?? '');
   const [reason, setReason] = useState('');
@@ -94,6 +96,15 @@ function AdminRow({
 
   async function toggleActive() {
     setError(null);
+    if (
+      admin.active &&
+      !(await confirm({
+        title: `Deactivate ${admin.email}?`,
+        message: 'They will no longer be able to sign in. You can reactivate the account later.',
+        confirmLabel: 'Deactivate',
+      }))
+    )
+      return;
     try {
       if (admin.active) await mutations.deactivateAdmin.mutateAsync(admin.id);
       else await mutations.activateAdmin.mutateAsync(admin.id);

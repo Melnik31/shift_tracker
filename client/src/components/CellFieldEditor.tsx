@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { DataType, Employee, StatusValue, STATUS_VALUES, CellValue } from '../lib/types';
 import { employeeVisibleOnStaffField } from '../lib/staffRoles';
 import { useBadgeColors, useBadgeColorMutations } from '../hooks/useBadgeColors';
+import { useConfirm } from './ConfirmProvider';
 
 // Shared by CellPopover (editing an existing shift's cell) and
 // NewShiftBlockModal (composing several not-yet-created shifts at once) so
@@ -117,6 +118,7 @@ export default function CellFieldEditor({
       // eslint-disable-next-line react-hooks/rules-of-hooks -- dataType is fixed for the lifetime of a given CellFieldEditor instance (one per SubRow), same reasoning as the STAFF case below.
       const { data: badgeColorsData } = useBadgeColors();
       const { saveColor, removeColor } = useBadgeColorMutations();
+      const confirm = useConfirm();
       const colorInputRef = useRef<HTMLInputElement>(null);
       const [showSaveForm, setShowSaveForm] = useState(false);
       const [presetName, setPresetName] = useState('');
@@ -162,9 +164,9 @@ export default function CellFieldEditor({
                   <button
                     type="button"
                     title="Remove saved color"
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
-                      removeColor.mutate(c.id);
+                      if (await confirm({ title: `Remove saved color${c.label ? ` "${c.label}"` : ''}?`, message: 'It is removed from the quick-pick list for everyone in this workspace. Shifts already using it keep their color.', confirmLabel: 'Remove color' })) removeColor.mutate(c.id);
                     }}
                     className="absolute -top-1 -right-1 hidden group-hover:flex items-center justify-center w-3.5 h-3.5 rounded-full bg-slate-700 text-white text-[8px] leading-none"
                   >
@@ -182,9 +184,9 @@ export default function CellFieldEditor({
                   <button
                     type="button"
                     title="Remove saved color"
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
-                      removeColor.mutate(c.id);
+                      if (await confirm({ title: `Remove saved color${c.label ? ` "${c.label}"` : ''}?`, message: 'It is removed from the quick-pick list for everyone in this workspace. Shifts already using it keep their color.', confirmLabel: 'Remove color' })) removeColor.mutate(c.id);
                     }}
                     className="absolute -top-1 -right-1 hidden group-hover:flex items-center justify-center w-3.5 h-3.5 rounded-full bg-slate-700 text-white text-[8px] leading-none"
                   >

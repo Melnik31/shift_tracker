@@ -6,6 +6,7 @@ import { useLayout, useLayoutMutations } from '../../hooks/useLayout';
 import { DATA_TYPES, DataType } from '../../lib/types';
 import { ONBOARDING_COMPLETE_STEP } from '../../lib/constants';
 import CampusManager from '../../components/CampusManager';
+import { useConfirm } from '../../components/ConfirmProvider';
 
 const STEP_LABELS = ['Workspace', 'Campuses', 'Sections & Locations', 'Sub-Rows'];
 
@@ -158,6 +159,7 @@ function StepCampuses({ onBack, onNext }: { onBack: () => void; onNext: () => vo
 function StepSectionsLocations({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
   const { data } = useLayout();
   const { addSection, addLocation, deleteSection, deleteLocation } = useLayoutMutations();
+  const confirm = useConfirm();
   const [newSection, setNewSection] = useState('');
   const [newLocation, setNewLocation] = useState<Record<string, string>>({});
 
@@ -177,7 +179,19 @@ function StepSectionsLocations({ onBack, onNext }: { onBack: () => void; onNext:
           <div key={section.id} className="border border-slate-200 rounded-lg p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-medium text-slate-700">{section.name}</h3>
-              <button onClick={() => deleteSection.mutate(section.id)} className="text-xs text-red-500 hover:underline">
+              <button
+                onClick={async () => {
+                  if (
+                    await confirm({
+                      title: `Remove section "${section.name}"?`,
+                      message: 'This also removes all of its locations and rows. This cannot be undone.',
+                      confirmLabel: 'Remove section',
+                    })
+                  )
+                    deleteSection.mutate(section.id);
+                }}
+                className="text-xs text-red-500 hover:underline"
+              >
                 Remove
               </button>
             </div>
@@ -185,7 +199,19 @@ function StepSectionsLocations({ onBack, onNext }: { onBack: () => void; onNext:
               {section.locations.map((loc) => (
                 <li key={loc.id} className="flex items-center justify-between text-sm text-slate-600 pl-2">
                   <span>• {loc.name}</span>
-                  <button onClick={() => deleteLocation.mutate(loc.id)} className="text-xs text-red-500 hover:underline">
+                  <button
+                    onClick={async () => {
+                      if (
+                        await confirm({
+                          title: `Remove location "${loc.name}"?`,
+                          message: 'This also removes all of its rows. This cannot be undone.',
+                          confirmLabel: 'Remove location',
+                        })
+                      )
+                        deleteLocation.mutate(loc.id);
+                    }}
+                    className="text-xs text-red-500 hover:underline"
+                  >
                     Remove
                   </button>
                 </li>
@@ -254,6 +280,7 @@ function StepSectionsLocations({ onBack, onNext }: { onBack: () => void; onNext:
 function StepSubRows({ onBack, onFinish }: { onBack: () => void; onFinish: () => void }) {
   const { data } = useLayout();
   const { addSubRow, deleteSubRow } = useLayoutMutations();
+  const confirm = useConfirm();
   const [labelDraft, setLabelDraft] = useState<Record<string, string>>({});
   const [typeDraft, setTypeDraft] = useState<Record<string, DataType>>({});
 
@@ -279,7 +306,19 @@ function StepSubRows({ onBack, onFinish }: { onBack: () => void; onFinish: () =>
                   <span>
                     • {sr.label} <span className="text-xs text-slate-400">({sr.dataType})</span>
                   </span>
-                  <button onClick={() => deleteSubRow.mutate(sr.id)} className="text-xs text-red-500 hover:underline">
+                  <button
+                    onClick={async () => {
+                      if (
+                        await confirm({
+                          title: `Remove row "${sr.label}"?`,
+                          message: 'This cannot be undone.',
+                          confirmLabel: 'Remove row',
+                        })
+                      )
+                        deleteSubRow.mutate(sr.id);
+                    }}
+                    className="text-xs text-red-500 hover:underline"
+                  >
                     Remove
                   </button>
                 </li>

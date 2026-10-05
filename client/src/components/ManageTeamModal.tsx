@@ -7,6 +7,7 @@ import { useLayout } from '../hooks/useLayout';
 import { ASSIGNABLE_ADMIN_ROLES, AssignableAdminRole, CAMPUS_SCOPED_ROLES, Employee, EMPLOYMENT_TYPES, EmploymentType } from '../lib/types';
 import { collectStaffFieldLabels } from '../lib/staffRoles';
 import Modal from './Modal';
+import { useConfirm } from './ConfirmProvider';
 
 const STAFF_ROLE_SUGGESTIONS_ID = 'staff-role-suggestions';
 
@@ -218,6 +219,7 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
   const allCampuses = campusData?.campuses ?? [];
   const campuses = allCampuses.filter((c) => c.active);
   const employees = data?.employees ?? [];
+  const confirm = useConfirm();
 
   // ── List view state ──────────────────────────────────────────────────
   const [view, setView] = useState<'list' | 'form'>('list');
@@ -397,9 +399,18 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
     setView('list');
   }
 
-  function onDeleteEdit() {
+  async function onDeleteEdit() {
     const id = [...selectedIds][0];
     if (!id) return;
+    const emp = employees.find((e) => e.id === id);
+    if (
+      !(await confirm({
+        title: `Delete ${emp?.name ?? 'this employee'}?`,
+        message: 'They are removed from every shift they are assigned to, along with their time-off requests. This cannot be undone.',
+        confirmLabel: 'Delete employee',
+      }))
+    )
+      return;
     deleteEmployee.mutate(id);
     setSelectedIds(new Set());
     setView('list');

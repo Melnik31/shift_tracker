@@ -4,6 +4,7 @@ import { useCampuses } from '../hooks/useCampuses';
 import { DATA_TYPES, DataType, Location } from '../lib/types';
 import { DATA_TYPE_INFO } from '../lib/constants';
 import Modal from './Modal';
+import { useConfirm } from './ConfirmProvider';
 
 // campusId mirrors whatever the Matrix's Campus selector is currently set
 // to: a specific campus scopes this modal's list to exactly that campus's
@@ -14,6 +15,7 @@ export default function ManageLayoutModal({ onClose, campusId }: { onClose: () =
   const { data } = useLayout(campusId);
   const { data: campusData } = useCampuses();
   const mutations = useLayoutMutations();
+  const confirm = useConfirm();
   const [newSectionName, setNewSectionName] = useState('');
   const [newSectionCampusId, setNewSectionCampusId] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -107,7 +109,19 @@ export default function ManageLayoutModal({ onClose, campusId }: { onClose: () =
                   onUp={() => mutations.moveSection.mutate({ id: section.id, direction: 'up' })}
                   onDown={() => mutations.moveSection.mutate({ id: section.id, direction: 'down' })}
                 />
-                <button onClick={() => mutations.deleteSection.mutate(section.id)} className="text-xs text-red-500 hover:underline ml-2">
+                <button
+                  onClick={async () => {
+                    if (
+                      await confirm({
+                        title: `Remove section "${section.name}"?`,
+                        message: 'This permanently deletes the section, all its locations and rows, and every shift scheduled on them. This cannot be undone.',
+                        confirmLabel: 'Remove section',
+                      })
+                    )
+                      mutations.deleteSection.mutate(section.id);
+                  }}
+                  className="text-xs text-red-500 hover:underline ml-2"
+                >
                   Remove Section
                 </button>
               </div>
@@ -220,6 +234,7 @@ function LocationCard({
   onToggleExpand: () => void;
   onLocationCreated: (id: string) => void;
 }) {
+  const confirm = useConfirm();
   const [duplicating, setDuplicating] = useState(false);
   const [duplicateName, setDuplicateName] = useState('');
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
@@ -269,7 +284,19 @@ function LocationCard({
           <button onClick={() => setDuplicating((v) => !v)} className="text-xs text-slate-500 hover:underline ml-2">
             Duplicate
           </button>
-          <button onClick={() => mutations.deleteLocation.mutate(location.id)} className="text-xs text-red-500 hover:underline ml-2">
+          <button
+            onClick={async () => {
+              if (
+                await confirm({
+                  title: `Remove location "${location.name}"?`,
+                  message: 'This permanently deletes the location, all its rows, and every shift scheduled on them. This cannot be undone.',
+                  confirmLabel: 'Remove location',
+                })
+              )
+                mutations.deleteLocation.mutate(location.id);
+            }}
+            className="text-xs text-red-500 hover:underline ml-2"
+          >
             Remove
           </button>
         </div>
@@ -331,7 +358,19 @@ function LocationCard({
                     onUp={() => mutations.moveSubRow.mutate({ id: sr.id, direction: 'up' })}
                     onDown={() => mutations.moveSubRow.mutate({ id: sr.id, direction: 'down' })}
                   />
-                  <button onClick={() => mutations.deleteSubRow.mutate(sr.id)} className="text-xs text-red-500 hover:underline ml-2">
+                  <button
+                    onClick={async () => {
+                      if (
+                        await confirm({
+                          title: `Remove row "${sr.label}"?`,
+                          message: 'This permanently deletes the row and all of its shift data. This cannot be undone.',
+                          confirmLabel: 'Remove row',
+                        })
+                      )
+                        mutations.deleteSubRow.mutate(sr.id);
+                    }}
+                    className="text-xs text-red-500 hover:underline ml-2"
+                  >
                     ✕
                   </button>
                 </div>

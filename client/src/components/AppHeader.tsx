@@ -1,6 +1,7 @@
 import { ReactNode, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useConfirm } from './ConfirmProvider';
 import { usePendingTimeOffCount } from '../hooks/useTimeOff';
 import AddShiftModal from './AddShiftModal';
 import DateRangePicker from './DateRangePicker';
@@ -43,6 +44,7 @@ export default function AppHeader({
   showAddShiftButton = true,
 }: Props) {
   const { data: me, logout } = useAuth();
+  const confirm = useConfirm();
   // COACH-role admins can't review requests (server 404s them), so don't poll.
   const canReviewRequests = !!me?.admin && me.admin.role !== 'COACH';
   const { data: pending } = usePendingTimeOffCount(canReviewRequests);
@@ -87,6 +89,7 @@ export default function AppHeader({
         </nav>
         <button
           onClick={async () => {
+            if (!(await confirm({ title: 'Log out?', message: 'You will need to sign in again to continue.', confirmLabel: 'Log out', destructive: false }))) return;
             await logout();
             navigate('/');
           }}
