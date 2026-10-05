@@ -3,6 +3,7 @@ import SidePanel from './SidePanel';
 import CellFieldEditor, { CellFieldState, cellFieldPayload, emptyCellFieldState, isCellFieldStateFilled } from './CellFieldEditor';
 import { useLayout } from '../hooks/useLayout';
 import { useEmployees } from '../hooks/useEmployees';
+import { useEmployeesOff } from '../hooks/useTimeOff';
 import { useBulkShiftMutation } from '../hooks/useShifts';
 import { api } from '../lib/api';
 import { BulkShiftRow, SESSION_TYPES } from '../lib/types';
@@ -27,6 +28,7 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
   const [locationId, setLocationId] = useState('');
   const section = sections.find((s) => s.id === sectionId);
   const { data: employeesData } = useEmployees(section?.campusId);
+  const offEmployeeIds = useEmployeesOff(blockDate, section?.campusId);
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('17:00');
   const [sessionType, setSessionType] = useState('');
@@ -244,6 +246,7 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
                     employees={employees}
                     subRowLabel={sr.label}
                     knownStaffLabels={knownStaffLabels}
+                    offEmployeeIds={offEmployeeIds}
                   />
                 )}
               </div>

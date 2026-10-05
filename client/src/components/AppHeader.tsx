@@ -1,6 +1,7 @@
 import { ReactNode, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { usePendingTimeOffCount } from '../hooks/useTimeOff';
 import AddShiftModal from './AddShiftModal';
 import DateRangePicker from './DateRangePicker';
 import { DateRange } from '../lib/dateRange';
@@ -42,6 +43,10 @@ export default function AppHeader({
   showAddShiftButton = true,
 }: Props) {
   const { data: me, logout } = useAuth();
+  // COACH-role admins can't review requests (server 404s them), so don't poll.
+  const canReviewRequests = !!me?.admin && me.admin.role !== 'COACH';
+  const { data: pending } = usePendingTimeOffCount(canReviewRequests);
+  const pendingCount = pending?.count ?? 0;
   const navigate = useNavigate();
   const [showAddShift, setShowAddShift] = useState(false);
   const effectiveDate = dateRange ? dateRange.start : date ?? '';
@@ -64,6 +69,16 @@ export default function AppHeader({
           <NavLink to="/coach-hours" className={tabClass}>
             Group Hours
           </NavLink>
+          {canReviewRequests && (
+            <NavLink to="/requests" className={(p) => `${tabClass(p)} inline-flex items-center gap-1.5`}>
+              Requests
+              {pendingCount > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[11px] font-semibold leading-[18px] text-center">
+                  {pendingCount}
+                </span>
+              )}
+            </NavLink>
+          )}
           {me?.admin?.role === 'ADMIN' && (
             <NavLink to="/payroll" className={tabClass}>
               Payroll

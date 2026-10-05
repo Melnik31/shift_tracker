@@ -14,6 +14,8 @@ import payrollRoutes from './routes/payroll';
 import adminRoutes from './routes/admins';
 import campusRoutes from './routes/campuses';
 import badgeColorRoutes from './routes/badgeColors';
+import myTimeOffRoutes from './routes/myTimeOff';
+import timeOffRoutes from './routes/timeOff';
 
 const PgSessionStore = pgSession(session);
 
@@ -86,6 +88,8 @@ export function createApp() {
   app.use('/api/employees', employeeRoutes);
   app.use('/api/shifts', shiftRoutes);
   app.use('/api/my/shifts', myShiftsRoutes);
+  app.use('/api/my/time-off', myTimeOffRoutes);
+  app.use('/api/time-off', timeOffRoutes);
   app.use('/api/analytics', analyticsRoutes);
   app.use('/api/payroll', payrollRoutes);
   app.use('/api/admin-users', adminRoutes);

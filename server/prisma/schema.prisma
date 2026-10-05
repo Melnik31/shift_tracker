@@ -38,6 +38,7 @@ model Workspace {
   payrollPeriodReopens PayrollPeriodReopen[]
   roleChanges RoleChange[]
   savedBadgeColors SavedBadgeColor[]
+  timeOffRequests TimeOffRequest[]
 }
 
 // A Workspace subdivision that scopes DIRECTOR/SENIOR_LEAD_INSTRUCTOR access (ADMIN/CEO see
@@ -102,6 +103,7 @@ model AdminUser {
   createdReopens PayrollPeriodReopen[]
   roleChangesReceived RoleChange[] @relation("RoleChangeTarget")
   roleChangesMade     RoleChange[] @relation("RoleChangeActor")
+  timeOffReviewed     TimeOffRequest[]
 
   @@unique([workspaceId, email])
   @@index([campusId])
@@ -158,8 +160,35 @@ model Employee {
   campuses    EmployeeCampus[]
   assignments CellStaffAssignment[]
   payrollAdjustments PayrollAdjustment[]
+  timeOffRequests TimeOffRequest[]
 
   @@index([workspaceId])
+}
+
+// A coach's request for full days off, [startDate, endDate] inclusive
+// (same date = one day). status is a plain string per this schema's
+// convention: PENDING | APPROVED | DENIED | CANCELLED. An APPROVED request
+// makes the employee unassignable on STAFF rows for every date in range
+// (enforced in routes/shifts.ts, grayed out in the client's staff picker).
+model TimeOffRequest {
+  id           String    @id @default(uuid())
+  workspaceId  String
+  employeeId   String
+  startDate    String    // YYYY-MM-DD
+  endDate      String    // YYYY-MM-DD
+  reason       String?
+  status       String    @default("PENDING")
+  decisionNote String?
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  workspace  Workspace  @relation(fields: [workspaceId], references: [id])
+  employee   Employee   @relation(fields: [employeeId], references: [id])
+  reviewedBy AdminUser? @relation(fields: [reviewedById], references: [id])
+
+  @@index([workspaceId, status])
+  @@index([employeeId])
 }
 
 // Employee <-> Campus membership. Same bare join-row shape as

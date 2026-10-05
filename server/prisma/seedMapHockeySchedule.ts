@@ -256,6 +256,7 @@ async function main() {
   await prisma.cellStaffAssignment.deleteMany({ where: { employeeId: { in: existingEmployeeIds } } });
   await prisma.employeeCampus.deleteMany({ where: { employeeId: { in: existingEmployeeIds } } });
   await prisma.payrollAdjustment.deleteMany({ where: { workspaceId: workspace.id } });
+  await prisma.timeOffRequest.deleteMany({ where: { workspaceId: workspace.id } });
   const deletedEmployees = await prisma.employee.deleteMany({ where: { workspaceId: workspace.id } });
   console.log(`  removed ${deletedEmployees.count} existing employees`);
 

@@ -611,6 +611,7 @@ async function main() {
   await prisma.subRow.deleteMany();
   await prisma.location.deleteMany();
   await prisma.section.deleteMany();
+  await prisma.timeOffRequest.deleteMany();
   await prisma.payrollAdjustment.deleteMany();
   await prisma.payrollPeriodReopen.deleteMany();
   await prisma.payrollPeriod.deleteMany();

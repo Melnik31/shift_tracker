@@ -6,8 +6,12 @@ import { useAuth } from '../hooks/useAuth';
 import { EmployeeDayShift, EmployeeDaySummary, EventSubRowInfo } from '../lib/types';
 import { formatTime12h } from '../lib/time';
 import { STATUS_COLORS, SESSION_TYPE_COLORS } from '../lib/constants';
+import { useMyTimeOff, useMyTimeOffMutations } from '../hooks/useTimeOff';
+import { formatTimeOffRange, TIME_OFF_STATUS_STYLES } from '../lib/timeOff';
+import RequestTimeOffModal from '../components/RequestTimeOffModal';
 
 type Range = 'day' | 'week' | 'upcoming';
+type Tab = Range | 'timeoff';
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -16,12 +20,15 @@ function todayStr() {
 export default function MyShifts() {
   const { data: me, logout } = useAuth();
   const navigate = useNavigate();
-  const [range, setRange] = useState<Range>('day');
+  const [tab, setTab] = useState<Tab>('day');
+  const [showRequestModal, setShowRequestModal] = useState(false);
   const [date] = useState(todayStr());
+  const range: Range = tab === 'timeoff' ? 'day' : tab;
 
   const { data } = useQuery<{ days: EmployeeDaySummary[] }>({
     queryKey: ['my-shifts', range, date],
     queryFn: () => api.get(`/my/shifts?range=${range}&date=${date}`),
+    enabled: tab !== 'timeoff',
   });
 
   const days = data?.days ?? [];
@@ -34,38 +41,57 @@ export default function MyShifts() {
           <h1 className="text-base font-semibold text-slate-800">{me?.employee?.name}</h1>
           <p className="text-xs text-slate-400">{me?.workspace.name}</p>
         </div>
-        <button
-          onClick={async () => {
-            await logout();
-            navigate('/');
-          }}
-          className="text-sm text-slate-500 hover:underline"
-        >
-          Log out
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowRequestModal(true)}
+            className="rounded-md bg-slate-900 text-white px-3 py-1.5 text-sm font-medium hover:bg-slate-700"
+          >
+            Request time off
+          </button>
+          <button
+            onClick={async () => {
+              await logout();
+              navigate('/');
+            }}
+            className="text-sm text-slate-500 hover:underline"
+          >
+            Log out
+          </button>
+        </div>
       </header>
 
       <div className="px-4 py-3 flex gap-2 sticky top-[57px] bg-slate-50 z-10">
         <button
-          onClick={() => setRange('day')}
-          className={`flex-1 rounded-md py-1.5 text-sm font-medium ${range === 'day' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-300 text-slate-600'}`}
+          onClick={() => setTab('day')}
+          className={`flex-1 rounded-md py-1.5 text-sm font-medium ${tab === 'day' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-300 text-slate-600'}`}
         >
           Today
         </button>
         <button
-          onClick={() => setRange('week')}
-          className={`flex-1 rounded-md py-1.5 text-sm font-medium ${range === 'week' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-300 text-slate-600'}`}
+          onClick={() => setTab('week')}
+          className={`flex-1 rounded-md py-1.5 text-sm font-medium ${tab === 'week' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-300 text-slate-600'}`}
         >
           This Week
         </button>
         <button
-          onClick={() => setRange('upcoming')}
-          className={`flex-1 rounded-md py-1.5 text-sm font-medium ${range === 'upcoming' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-300 text-slate-600'}`}
+          onClick={() => setTab('upcoming')}
+          className={`flex-1 rounded-md py-1.5 text-sm font-medium ${tab === 'upcoming' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-300 text-slate-600'}`}
         >
           Upcoming
         </button>
+        <button
+          onClick={() => setTab('timeoff')}
+          className={`flex-1 rounded-md py-1.5 text-sm font-medium ${tab === 'timeoff' ? 'bg-slate-900 text-white' : 'bg-white border border-slate-300 text-slate-600'}`}
+        >
+          Time off
+        </button>
       </div>
 
+      {tab === 'timeoff' ? (
+        <main className="px-4 pb-10 max-w-lg mx-auto">
+          <MyTimeOffList onRequest={() => setShowRequestModal(true)} />
+        </main>
+      ) : (
       <main className="px-4 pb-10 max-w-lg mx-auto">
         {days.filter((d) => !hideEmptyDays || d.shifts.length > 0).length === 0 && (
           <p className="text-center text-sm text-slate-400 mt-10">No shifts scheduled.</p>
@@ -75,7 +101,61 @@ export default function MyShifts() {
           return <DayCard key={day.date} day={day} showBreakdown={range !== 'upcoming'} />;
         })}
       </main>
+      )}
+
+      {showRequestModal && <RequestTimeOffModal onClose={() => setShowRequestModal(false)} onCreated={() => setTab('timeoff')} />}
     </div>
+  );
+}
+
+function MyTimeOffList({ onRequest }: { onRequest: () => void }) {
+  const { data, isLoading } = useMyTimeOff();
+  const { cancel } = useMyTimeOffMutations();
+  const requests = data?.requests ?? [];
+
+  if (isLoading) return null;
+  if (requests.length === 0) {
+    return (
+      <div className="text-center mt-10">
+        <p className="text-sm text-slate-400 mb-3">You haven't requested any time off.</p>
+        <button onClick={onRequest} className="text-sm font-medium text-blue-700 hover:text-blue-900">
+          Request time off
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <ul className="space-y-3">
+      {requests.map((r) => {
+        const style = TIME_OFF_STATUS_STYLES[r.status];
+        return (
+          <li key={r.id} className="bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-slate-800">{formatTimeOffRange(r.startDate, r.endDate)}</p>
+                {r.reason && <p className="text-xs text-slate-500 mt-0.5">{r.reason}</p>}
+              </div>
+              <span className={`flex-none rounded-full px-2 py-0.5 text-[11px] font-medium ${style.className}`}>{style.label}</span>
+            </div>
+            {r.status === 'DENIED' && r.decisionNote && (
+              <p className="mt-2 rounded-md bg-red-50 border border-red-100 px-3 py-2 text-xs text-red-700">
+                <span className="font-medium">Note:</span> {r.decisionNote}
+              </p>
+            )}
+            {r.status === 'PENDING' && (
+              <button
+                onClick={() => cancel.mutate(r.id)}
+                disabled={cancel.isPending}
+                className="mt-2 text-xs text-slate-500 hover:text-red-600 disabled:opacity-50"
+              >
+                Cancel request
+              </button>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

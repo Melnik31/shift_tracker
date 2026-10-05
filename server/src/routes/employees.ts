@@ -178,6 +178,7 @@ router.delete('/:id', async (req, res) => {
 
   await prisma.cellStaffAssignment.deleteMany({ where: { employeeId: existing.id } });
   await prisma.employeeCampus.deleteMany({ where: { employeeId: existing.id } });
+  await prisma.timeOffRequest.deleteMany({ where: { employeeId: existing.id } });
   await prisma.employee.delete({ where: { id: existing.id } });
   res.json({ ok: true });
 });

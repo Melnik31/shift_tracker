@@ -83,9 +83,22 @@ interface Props {
   knownStaffLabels?: Set<string>;
   onKeyDown?: (e: React.KeyboardEvent) => void;
   autoFocus?: boolean;
+  // Employees with approved time off on this shift's date — shown grayed out
+  // and can't be newly checked (the server drops them anyway).
+  offEmployeeIds?: Set<string>;
 }
 
-export default function CellFieldEditor({ dataType, state, onChange, employees, subRowLabel, knownStaffLabels, onKeyDown, autoFocus }: Props) {
+export default function CellFieldEditor({
+  dataType,
+  state,
+  onChange,
+  employees,
+  subRowLabel,
+  knownStaffLabels,
+  onKeyDown,
+  autoFocus,
+  offEmployeeIds,
+}: Props) {
   switch (dataType) {
     case 'TEXT':
       return (
@@ -297,18 +310,31 @@ export default function CellFieldEditor({ dataType, state, onChange, employees, 
             className="w-full mb-1.5 rounded-md border border-slate-300 px-2 py-1 text-sm"
           />
           <div className="max-h-36 overflow-y-auto space-y-1">
-            {visibleEmployees.map((emp) => (
-              <label key={emp.id} className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={state.staffIds.includes(emp.id)}
-                  onChange={(e) =>
-                    onChange({ ...state, staffIds: e.target.checked ? [...state.staffIds, emp.id] : state.staffIds.filter((id) => id !== emp.id) })
-                  }
-                />
-                {emp.name}
-              </label>
-            ))}
+            {visibleEmployees.map((emp) => {
+              const checked = state.staffIds.includes(emp.id);
+              const off = !!offEmployeeIds?.has(emp.id);
+              // An already-checked off employee stays uncheckable, so they
+              // can be removed — never trapped on the shift.
+              const disabled = off && !checked;
+              return (
+                <label
+                  key={emp.id}
+                  title={off ? 'Approved time off on this date' : undefined}
+                  className={`flex items-center gap-2 text-sm ${off ? 'text-slate-400' : 'text-slate-700'} ${disabled ? 'cursor-not-allowed' : ''}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={disabled}
+                    onChange={(e) =>
+                      onChange({ ...state, staffIds: e.target.checked ? [...state.staffIds, emp.id] : state.staffIds.filter((id) => id !== emp.id) })
+                    }
+                  />
+                  <span className={off ? 'line-through' : ''}>{emp.name}</span>
+                  {off && <span className="rounded bg-slate-100 text-slate-500 px-1.5 py-0.5 text-[10px] font-medium">Time off</span>}
+                </label>
+              );
+            })}
             {visibleEmployees.length === 0 && <p className="text-xs text-slate-400 px-1 py-1">No employees match "{search}"</p>}
           </div>
         </div>

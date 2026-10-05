@@ -9,6 +9,7 @@ import CellFieldEditor, {
 } from './CellFieldEditor';
 import { useLayout } from '../hooks/useLayout';
 import { useEmployees } from '../hooks/useEmployees';
+import { useEmployeesOff } from '../hooks/useTimeOff';
 import { useShifts } from '../hooks/useShifts';
 import { api } from '../lib/api';
 import { Shift, SESSION_TYPES, SubRow } from '../lib/types';
@@ -42,6 +43,7 @@ export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSa
   const section = layout?.sections.find((s) => s.locations.some((l) => l.id === subRow.locationId)) ?? null;
   const location = section?.locations.find((l) => l.id === subRow.locationId) ?? null;
   const { data: employeesData } = useEmployees(section?.campusId);
+  const offEmployeeIds = useEmployeesOff(date, section?.campusId);
   const subRows = location?.subRows ?? [];
   const employees = employeesData?.employees ?? [];
   const shifts = shiftsData?.shifts ?? [];
@@ -287,6 +289,7 @@ export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSa
                     employees={employees}
                     subRowLabel={sr.label}
                     knownStaffLabels={knownStaffLabels}
+                    offEmployeeIds={offEmployeeIds}
                   />
                 )}
               </div>
