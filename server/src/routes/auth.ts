@@ -10,9 +10,23 @@ const router = Router();
 // then logs the admin in. This is what feeds a fresh workspace into the
 // onboarding wizard (onboardingStep starts at 0).
 router.post('/admin/signup', async (req, res) => {
-  const { workspaceName, workspaceCode, email, password } = req.body ?? {};
+  const { workspaceName: rawName, workspaceCode: rawCode, email: rawEmail, password } = req.body ?? {};
+  const workspaceName = typeof rawName === 'string' ? rawName.trim() : '';
+  const workspaceCode = typeof rawCode === 'string' ? rawCode.trim() : '';
+  const email = typeof rawEmail === 'string' ? rawEmail.trim() : '';
   if (!workspaceName || !workspaceCode || !email || !password) {
     return res.status(400).json({ error: 'workspaceName, workspaceCode, email, and password are required' });
+  }
+  // The code is what a whole team types to sign in, so keep it short and
+  // typeable. (Pre-existing workspaces are unaffected — this only gates new signups.)
+  if (!/^[A-Za-z0-9]{3,16}$/.test(workspaceCode)) {
+    return res.status(400).json({ error: 'Workspace code must be 3-16 letters or numbers' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Enter a valid email address' });
+  }
+  if (typeof password !== 'string' || password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
 
   const codeTaken = await prisma.workspace.findUnique({ where: { workspaceCode } });

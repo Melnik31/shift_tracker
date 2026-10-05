@@ -1,44 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useLayout, useLayoutMutations } from '../hooks/useLayout';
 import { useCampuses } from '../hooks/useCampuses';
 import { DATA_TYPES, DataType, Location, Section, SubRow } from '../lib/types';
 import { DATA_TYPE_INFO } from '../lib/constants';
-import { useConfirm } from './ConfirmProvider';
 import { api } from '../lib/api';
-
-type Confirm = ReturnType<typeof useConfirm>;
-
-// Asks the server how many existing shifts a removal would delete, so the
-// warning is concrete instead of generic. Falls back to the generic wording
-// if that lookup fails — the removal itself is never blocked by it.
-async function confirmRemoval(
-  confirm: Confirm,
-  opts: { kind: 'section' | 'location' | 'subrow'; id: string; title: string; contains?: string; confirmLabel: string }
-): Promise<boolean> {
-  let impact: string;
-  try {
-    const { shifts, upcoming } = await api.get<{ shifts: number; upcoming: number }>(`/layout/impact?kind=${opts.kind}&id=${opts.id}`);
-    impact =
-      shifts === 0
-        ? 'No shifts are scheduled on it, so nothing already on the schedule is affected.'
-        : `${shifts} existing shift${shifts === 1 ? '' : 's'}${upcoming > 0 ? ` (${upcoming} upcoming)` : ''} will be permanently deleted, along with ${
-            shifts === 1 ? 'its' : 'their'
-          } staff assignments and attachments.`;
-  } catch {
-    impact = 'Every shift scheduled on it will be permanently deleted.';
-  }
-  return confirm({
-    title: opts.title,
-    message: (
-      <>
-        {opts.contains && <span className="block mb-1">{opts.contains}</span>}
-        <span className="block">{impact}</span>
-        <span className="block mt-1 font-medium text-slate-700">This cannot be undone.</span>
-      </>
-    ),
-    confirmLabel: opts.confirmLabel,
-  });
-}
+import { useConfirm } from './ConfirmProvider';
+import { confirmRemoval } from './confirmRemoval';
 
 type Selection = { kind: 'section'; id: string } | { kind: 'location'; id: string } | null;
 
@@ -524,6 +492,7 @@ function EditForm({
   campuses,
   initialCampusId,
   campusKnown = true,
+  typeField,
   onSave,
   onCancel,
 }: {
@@ -532,21 +501,25 @@ function EditForm({
   campuses?: { id: string; name: string }[];
   initialCampusId?: string;
   campusKnown?: boolean;
-  onSave: (values: { name: string; campusId?: string }) => Promise<void>;
+  // Fields only: lets the type be changed. `lockedReason` (when set) disables
+  // the picker and says why — a type can't change once shifts have data in it.
+  typeField?: { initial: DataType; lockedReason: string | null };
+  onSave: (values: { name: string; campusId?: string; dataType?: DataType }) => Promise<void>;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initialName);
   const [campusId, setCampusId] = useState(initialCampusId ?? '');
+  const [dataType, setDataType] = useState<DataType>(typeField?.initial ?? 'TEXT');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const changed = name.trim() !== initialName || (campuses && campusId !== initialCampusId);
+  const changed = name.trim() !== initialName || (campuses && campusId !== initialCampusId) || (typeField && dataType !== typeField.initial);
 
   async function save() {
     if (!name.trim() || !changed) return;
     setSaving(true);
     setError(null);
     try {
-      await onSave({ name: name.trim(), campusId: campuses ? campusId : undefined });
+      await onSave({ name: name.trim(), campusId: campuses ? campusId : undefined, dataType: typeField ? dataType : undefined });
     } catch (err: any) {
       setError(err.message ?? 'Could not save');
       setSaving(false);
@@ -587,6 +560,24 @@ function EditForm({
             </select>
           </div>
         )}
+        {typeField && (
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Type</label>
+            <select
+              value={dataType}
+              disabled={!!typeField.lockedReason}
+              onChange={(e) => setDataType(e.target.value as DataType)}
+              title={typeField.lockedReason ?? undefined}
+              className={`${INPUT} bg-white disabled:bg-slate-100 disabled:text-slate-500`}
+            >
+              {DATA_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {DATA_TYPE_INFO[t].label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="flex gap-2">
           <button onClick={save} disabled={saving || !name.trim() || !changed} className={BTN_PRIMARY}>
             {saving ? 'Saving…' : 'Save'}
@@ -596,6 +587,7 @@ function EditForm({
           </button>
         </div>
       </div>
+      {typeField?.lockedReason && <p className="text-xs text-slate-500 mt-2">{typeField.lockedReason}</p>}
       {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
     </div>
   );
@@ -816,16 +808,31 @@ function FieldRow({
   const confirm = useConfirm();
   const [editing, setEditing] = useState(false);
   const isBadge = subRow.dataType === 'BADGE';
+  // The type can only change while no shift has data in this field; check
+  // when the form opens so the picker can say so up front.
+  const { data: impact } = useQuery<{ filledCells: number }>({
+    queryKey: ['layout-impact', 'subrow', subRow.id],
+    queryFn: () => api.get(`/layout/impact?kind=subrow&id=${subRow.id}`),
+    enabled: editing,
+    gcTime: 0,
+  });
+  const filled = impact?.filledCells ?? 0;
+  const lockedReason = !impact ? 'Checking whether this field has data…' : filled > 0 ? `Type is locked: ${filled} shift${filled === 1 ? ' has' : 's have'} data in this field. Add a new field to use a different type.` : null;
 
   if (editing) {
     return (
       <div className="px-4 py-3 border-t border-slate-100">
         <EditForm
           initialName={subRow.label}
-          nameLabel={`Field name (${DATA_TYPE_INFO[subRow.dataType].label})`}
+          nameLabel="Field name"
+          typeField={{ initial: subRow.dataType, lockedReason }}
           onCancel={() => setEditing(false)}
-          onSave={async ({ name }) => {
-            await mutations.updateSubRow.mutateAsync({ id: subRow.id, label: name });
+          onSave={async ({ name, dataType }) => {
+            await mutations.updateSubRow.mutateAsync({
+              id: subRow.id,
+              ...(name !== subRow.label ? { label: name } : {}),
+              ...(dataType && dataType !== subRow.dataType ? { dataType } : {}),
+            });
             setEditing(false);
           }}
         />

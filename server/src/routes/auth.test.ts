@@ -32,8 +32,28 @@ describe('POST /api/auth/admin/signup', () => {
     await signupAdmin(app, { workspaceCode: 'DUPE1' });
     const res = await request(app)
       .post('/api/auth/admin/signup')
-      .send({ workspaceName: 'Other', workspaceCode: 'DUPE1', email: 'a@b.com', password: 'x' });
+      .send({ workspaceName: 'Other', workspaceCode: 'DUPE1', email: 'a@b.com', password: 'password123' });
     expect(res.status).toBe(409);
+  });
+
+  it('rejects a bad workspace code, email, or short password', async () => {
+    const valid = { workspaceName: 'Acme', workspaceCode: 'ACME1', email: 'a@acme.example', password: 'password123' };
+    const post = (over: object) => request(app).post('/api/auth/admin/signup').send({ ...valid, ...over });
+
+    expect((await post({ workspaceCode: 'AB' })).status).toBe(400); // too short
+    expect((await post({ workspaceCode: 'HAS-DASH' })).status).toBe(400);
+    expect((await post({ workspaceCode: 'WAYTOOLONGCODE12345' })).status).toBe(400);
+    expect((await post({ email: 'not-an-email' })).status).toBe(400);
+    expect((await post({ password: 'short' })).status).toBe(400);
+    expect((await post({})).status).toBe(201); // the valid baseline still works
+  });
+
+  it('trims whitespace around the workspace name, code, and email', async () => {
+    const res = await request(app)
+      .post('/api/auth/admin/signup')
+      .send({ workspaceName: '  Trim Co  ', workspaceCode: ' TRIM1 ', email: ' t@trim.example ', password: 'password123' });
+    expect(res.status).toBe(201);
+    expect(res.body.workspace).toMatchObject({ name: 'Trim Co', workspaceCode: 'TRIM1' });
   });
 });
 
@@ -69,13 +89,13 @@ describe('POST /api/auth/admin/login', () => {
   });
 
   it('rejects an email that belongs to a different workspace', async () => {
-    await signupAdmin(app, { workspaceCode: 'LOGIN3A', email: 'shared@example.com', password: 'pw-a' });
-    await signupAdmin(app, { workspaceCode: 'LOGIN3B', email: 'other@example.com', password: 'pw-b' });
+    await signupAdmin(app, { workspaceCode: 'LOGIN3A', email: 'shared@example.com', password: 'password-a' });
+    await signupAdmin(app, { workspaceCode: 'LOGIN3B', email: 'other@example.com', password: 'password-b' });
 
     // Right password, but for the wrong tenant's workspaceCode.
     const res = await request(app)
       .post('/api/auth/admin/login')
-      .send({ workspaceCode: 'LOGIN3B', email: 'shared@example.com', password: 'pw-a' });
+      .send({ workspaceCode: 'LOGIN3B', email: 'shared@example.com', password: 'password-a' });
     expect(res.status).toBe(401);
   });
 

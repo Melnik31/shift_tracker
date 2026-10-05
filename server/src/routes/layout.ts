@@ -14,6 +14,18 @@ router.use(requireRole('DIRECTOR', 'SENIOR_LEAD_INSTRUCTOR', 'ADMIN', 'CEO'));
 
 // GET /api/layout — full Section -> Location -> SubRow tree for the caller's
 // workspace, narrowed to their Campus when restricted.
+// How many shifts have real data in a sub-row: a text/badge/status/link value,
+// a staff assignment, or an attached file. Empty cells don't count.
+async function filledCellCount(subRowId: string): Promise<number> {
+  const cells = await prisma.cellValue.findMany({
+    where: { subRowId },
+    select: { textValue: true, badgeLabel: true, statusValue: true, linkUrl: true, _count: { select: { staffAssignments: true, fileUploads: true } } },
+  });
+  return cells.filter(
+    (c) => c.textValue?.trim() || c.badgeLabel?.trim() || c.statusValue || c.linkUrl?.trim() || c._count.staffAssignments > 0 || c._count.fileUploads > 0
+  ).length;
+}
+
 router.get('/', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
   const scope = campusScopeFor(req);
@@ -119,7 +131,8 @@ router.get('/impact', async (req, res) => {
     prisma.shift.count({ where: { workspaceId, subRow: subRowFilter } }),
     prisma.shift.count({ where: { workspaceId, subRow: subRowFilter, date: { gte: today } } }),
   ]);
-  res.json({ shifts, upcoming });
+  const filledCells = kind === 'subrow' ? await filledCellCount(id) : undefined;
+  res.json({ shifts, upcoming, ...(filledCells !== undefined ? { filledCells } : {}) });
 });
 
 router.delete('/sections/:id', async (req, res) => {
@@ -263,12 +276,28 @@ router.patch('/subrows/:id', async (req, res) => {
   const existing = await subRowInScope(req.params.id, workspaceId, scope);
   if (!existing) return res.status(404).json({ error: 'SubRow not found' });
 
-  const { label, config, isGroupField } = req.body ?? {};
+  const { label, config, isGroupField, dataType } = req.body ?? {};
+
+  // A field's type can only change while no shift has data in it — existing
+  // values (staff assignments, badges, files...) are shaped by the old type.
+  let newType = existing.dataType;
+  if (dataType !== undefined && dataType !== existing.dataType) {
+    if (!DATA_TYPES.includes(dataType)) return res.status(400).json({ error: `dataType must be one of ${DATA_TYPES.join(', ')}` });
+    const filled = await filledCellCount(existing.id);
+    if (filled > 0) {
+      return res.status(409).json({
+        error: `This field already has data on ${filled} shift${filled === 1 ? '' : 's'}, so its type can't be changed. Add a new field instead.`,
+      });
+    }
+    newType = dataType;
+  }
+  const typeChanged = newType !== existing.dataType;
+
   if (isGroupField !== undefined) {
     if (typeof isGroupField !== 'boolean') {
       return res.status(400).json({ error: 'isGroupField must be a boolean' });
     }
-    if (isGroupField && existing.dataType !== 'BADGE') {
+    if (isGroupField && newType !== 'BADGE') {
       return res.status(400).json({ error: 'Only a BADGE sub-row can be the group field' });
     }
   }
@@ -290,6 +319,13 @@ router.patch('/subrows/:id', async (req, res) => {
         ...(label !== undefined ? { label } : {}),
         ...(config !== undefined ? { config: JSON.stringify(config) } : {}),
         ...(isGroupField !== undefined ? { isGroupField } : {}),
+        ...(typeChanged
+          ? {
+              dataType: newType,
+              config: config !== undefined ? JSON.stringify(config) : '{}', // type-specific settings don't carry over
+              ...(newType !== 'BADGE' ? { isGroupField: false } : {}),
+            }
+          : {}),
       },
     });
   });

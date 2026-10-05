@@ -18,8 +18,8 @@ beforeEach(async () => {
 });
 
 async function setupTwoWorkspaces() {
-  const a = await signupAdmin(app, { workspaceCode: 'TENANT-A' });
-  const b = await signupAdmin(app, { workspaceCode: 'TENANT-B' });
+  const a = await signupAdmin(app, { workspaceCode: 'TENANTA' });
+  const b = await signupAdmin(app, { workspaceCode: 'TENANTB' });
   return { a, b };
 }
 
@@ -122,7 +122,7 @@ describe('tenant isolation', () => {
     const { a } = await setupTwoWorkspaces();
     await a.agent.post('/api/employees').send({ name: 'Worker', pin: '3333' });
 
-    const { agent: empAgent } = await loginEmployee(app, 'TENANT-A', '3333');
+    const { agent: empAgent } = await loginEmployee(app, 'TENANTA', '3333');
 
     // These routes are requireRole(DIRECTOR, ADMIN, CEO)-gated; an employee
     // session's implicit COACH role denies with 404, same as any other

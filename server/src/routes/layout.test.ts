@@ -306,8 +306,8 @@ describe('GET /api/layout/impact (removal warning counts)', () => {
     const bySection = await agent.get('/api/layout/impact').query({ kind: 'section', id: section.id });
     expect(bySection.body).toEqual({ shifts: 3, upcoming: 2 });
     expect((await agent.get('/api/layout/impact').query({ kind: 'location', id: location.id })).body).toEqual({ shifts: 3, upcoming: 2 });
-    expect((await agent.get('/api/layout/impact').query({ kind: 'subrow', id: notes.id })).body).toEqual({ shifts: 2, upcoming: 1 });
-    expect((await agent.get('/api/layout/impact').query({ kind: 'subrow', id: other.id })).body).toEqual({ shifts: 1, upcoming: 1 });
+    expect((await agent.get('/api/layout/impact').query({ kind: 'subrow', id: notes.id })).body).toEqual({ shifts: 2, upcoming: 1, filledCells: 0 });
+    expect((await agent.get('/api/layout/impact').query({ kind: 'subrow', id: other.id })).body).toEqual({ shifts: 1, upcoming: 1, filledCells: 0 });
   });
 
   it('rejects a bad kind, 404s unknown ids, and hides other workspaces', async () => {
@@ -318,5 +318,60 @@ describe('GET /api/layout/impact (removal warning counts)', () => {
     expect((await agent.get('/api/layout/impact').query({ kind: 'nope', id: section.id })).status).toBe(400);
     expect((await agent.get('/api/layout/impact').query({ kind: 'section', id: 'missing' })).status).toBe(404);
     expect((await other.get('/api/layout/impact').query({ kind: 'section', id: section.id })).status).toBe(404);
+  });
+});
+
+describe('changing a field type (PATCH /api/layout/subrows/:id { dataType })', () => {
+  async function makeField(agent: Awaited<ReturnType<typeof signupAdmin>>['agent'], dataType: string) {
+    const section = (await agent.post('/api/layout/sections').send({ name: 'Ice' })).body;
+    const location = (await agent.post('/api/layout/locations').send({ sectionId: section.id, name: 'Rink A' })).body;
+    const subRow = (await agent.post('/api/layout/subrows').send({ locationId: location.id, label: 'Field', dataType })).body;
+    return { location, subRow };
+  }
+
+  it('changes the type of a field with no shift data', async () => {
+    const { agent } = await signupAdmin(app);
+    const { subRow } = await makeField(agent, 'TEXT');
+    // An empty shift on the row (no values) doesn't block it.
+    await agent.post('/api/shifts').send({ subRowId: subRow.id, date: '2030-01-01', startTime: '09:00', endTime: '10:00' });
+
+    const res = await agent.patch(`/api/layout/subrows/${subRow.id}`).send({ dataType: 'STAFF', label: 'Coach' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ dataType: 'STAFF', label: 'Coach' });
+  });
+
+  it('clears the group-field flag when a BADGE field changes to another type', async () => {
+    const { agent } = await signupAdmin(app);
+    const { subRow } = await makeField(agent, 'BADGE');
+    await agent.patch(`/api/layout/subrows/${subRow.id}`).send({ isGroupField: true });
+
+    const res = await agent.patch(`/api/layout/subrows/${subRow.id}`).send({ dataType: 'TEXT' });
+    expect(res.body).toMatchObject({ dataType: 'TEXT', isGroupField: false });
+  });
+
+  it('409s once any shift has a value, staff assignment in the field, and reports the count', async () => {
+    const { agent } = await signupAdmin(app);
+    const { subRow } = await makeField(agent, 'TEXT');
+    const shift = (await agent.post('/api/shifts').send({ subRowId: subRow.id, date: '2030-01-01', startTime: '09:00', endTime: '10:00' })).body;
+    await agent.patch(`/api/shifts/cells/${shift.cellValues[0].id}`).send({ textValue: 'Bring pucks' });
+
+    const res = await agent.patch(`/api/layout/subrows/${subRow.id}`).send({ dataType: 'LINK' });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/1 shift/);
+
+    const impact = await agent.get('/api/layout/impact').query({ kind: 'subrow', id: subRow.id });
+    expect(impact.body.filledCells).toBe(1);
+
+    // Renaming (no type change) is still fine.
+    expect((await agent.patch(`/api/layout/subrows/${subRow.id}`).send({ label: 'Notes', dataType: 'TEXT' })).status).toBe(200);
+  });
+
+  it('rejects an unknown type and keeps the group-field rule against the new type', async () => {
+    const { agent } = await signupAdmin(app);
+    const { subRow } = await makeField(agent, 'TEXT');
+    expect((await agent.patch(`/api/layout/subrows/${subRow.id}`).send({ dataType: 'NOPE' })).status).toBe(400);
+    // Becoming BADGE and the group field in one request is allowed.
+    const res = await agent.patch(`/api/layout/subrows/${subRow.id}`).send({ dataType: 'BADGE', isGroupField: true });
+    expect(res.body).toMatchObject({ dataType: 'BADGE', isGroupField: true });
   });
 });
