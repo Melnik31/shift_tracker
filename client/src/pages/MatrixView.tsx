@@ -13,6 +13,7 @@ import { useCampuses } from '../hooks/useCampuses';
 import EditShiftBlockModal from '../components/EditShiftBlockModal';
 import ManageAdminsModal from '../components/ManageAdminsModal';
 import ManageCampusesModal from '../components/ManageCampusesModal';
+import ManageWorkspaceModal from '../components/ManageWorkspaceModal';
 import ManageLayoutModal from '../components/ManageLayoutModal';
 import ManageTeamModal from '../components/ManageTeamModal';
 import ManageMenu from '../components/ManageMenu';
@@ -67,6 +68,7 @@ export default function MatrixView() {
   const [showManageTeam, setShowManageTeam] = useState(false);
   const [showManageAdmins, setShowManageAdmins] = useState(false);
   const [showManageCampuses, setShowManageCampuses] = useState(false);
+  const [showWorkspaceSettings, setShowWorkspaceSettings] = useState(false);
   const [showNewShiftBlock, setShowNewShiftBlock] = useState(false);
   const [editingBlock, setEditingBlock] = useState<{ shift: Shift; subRow: SubRow } | null>(null);
   const canManageAdmins = me?.admin?.role === 'ADMIN' || me?.admin?.role === 'CEO';
@@ -208,6 +210,7 @@ export default function MatrixView() {
                   ? [
                       { label: 'Manage Admins', onClick: () => setShowManageAdmins(true) },
                       { label: 'Manage Campuses', onClick: () => setShowManageCampuses(true) },
+                      { label: 'Workspace Settings', onClick: () => setShowWorkspaceSettings(true) },
                     ]
                   : []),
               ]}
@@ -364,6 +367,7 @@ export default function MatrixView() {
       {showManageTeam && <ManageTeamModal campusId={campusId} onClose={() => setShowManageTeam(false)} />}
       {showManageAdmins && <ManageAdminsModal onClose={() => setShowManageAdmins(false)} />}
       {showManageCampuses && <ManageCampusesModal onClose={() => setShowManageCampuses(false)} />}
+      {showWorkspaceSettings && <ManageWorkspaceModal onClose={() => setShowWorkspaceSettings(false)} />}
       {showNewShiftBlock && <NewShiftBlockModal date={date} onClose={() => setShowNewShiftBlock(false)} />}
     </div>
   );

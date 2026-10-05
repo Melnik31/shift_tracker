@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createApp } from '../app';
 import { resetDb } from '../testUtils/resetDb';
 import { signupAdmin, loginEmployee, seedAdminWithRole, getDefaultCampus } from '../testUtils/authHelpers';
+import { prisma } from '../db';
 
 const app = createApp();
 
@@ -102,6 +103,39 @@ describe('layout CRUD (sections/locations/subrows)', () => {
 
     const res = await agent.patch('/api/layout/workspace').send({ workspaceCode: 'TAKEN1' });
     expect(res.status).toBe(409);
+  });
+
+  describe('workspace settings (PATCH /workspace)', () => {
+    it('renames the workspace and changes the code, and the new code signs in', async () => {
+      const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'OLDCODE' });
+      const res = await agent.patch('/api/layout/workspace').send({ name: '  New Name ', workspaceCode: 'NEWCODE' });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ id: workspace.id, name: 'New Name', workspaceCode: 'NEWCODE' });
+      expect((await agent.get('/api/auth/me')).body.workspace).toMatchObject({ name: 'New Name', workspaceCode: 'NEWCODE' });
+    });
+
+    it('rejects a blank name and a malformed or too-long input', async () => {
+      const { agent } = await signupAdmin(app, { workspaceCode: 'VALID1' });
+      expect((await agent.patch('/api/layout/workspace').send({ name: '   ' })).status).toBe(400);
+      expect((await agent.patch('/api/layout/workspace').send({ name: 'x'.repeat(81) })).status).toBe(400);
+      expect((await agent.patch('/api/layout/workspace').send({ workspaceCode: 'ab' })).status).toBe(400);
+      expect((await agent.patch('/api/layout/workspace').send({ workspaceCode: 'has-dash' })).status).toBe(400);
+    });
+
+    it('keeping the same code is fine, even a legacy one with a hyphen', async () => {
+      const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'LEGACY1' });
+      await prisma.workspace.update({ where: { id: workspace.id }, data: { workspaceCode: 'LEG-ACY' } });
+      const res = await agent.patch('/api/layout/workspace').send({ name: 'Renamed', workspaceCode: 'LEG-ACY' });
+      expect(res.status).toBe(200);
+      expect(res.body.workspaceCode).toBe('LEG-ACY');
+    });
+
+    it('a Director cannot change workspace settings', async () => {
+      const { workspace } = await signupAdmin(app, { workspaceCode: 'DIRWS1' });
+      const campus = await getDefaultCampus(workspace.id);
+      const director = await seedAdminWithRole(app, workspace.id, 'dir@dirws1.example', 'DIRECTOR', { campusId: campus.id });
+      expect((await director.patch('/api/layout/workspace').send({ name: 'Hijack' })).status).toBe(404);
+    });
   });
 
   it('skip-onboarding fills in a default section/location/subrow when the workspace is empty', async () => {

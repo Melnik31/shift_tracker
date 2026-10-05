@@ -364,20 +364,34 @@ router.patch('/onboarding-step', async (req, res) => {
   res.json({ onboardingStep: workspace.onboardingStep });
 });
 
-router.patch('/workspace', async (req, res) => {
+// Workspace settings (Manage -> Workspace Settings). Admin/CEO only: the code
+// is what every admin and coach types to sign in. A legacy code that predates
+// the signup format rules can be kept as-is; only a *changed* code is checked.
+router.patch('/workspace', requireRole('ADMIN', 'CEO'), async (req, res) => {
   const workspaceId = req.session.workspaceId!;
-  const { name, workspaceCode } = req.body ?? {};
-  if (workspaceCode) {
-    const clash = await prisma.workspace.findUnique({ where: { workspaceCode } });
-    if (clash && clash.id !== workspaceId) return res.status(409).json({ error: 'That workspace code is already taken' });
+  const { name: rawName, workspaceCode: rawCode } = req.body ?? {};
+  const current = await prisma.workspace.findUnique({ where: { id: workspaceId } });
+  if (!current) return res.status(404).json({ error: 'Not found' });
+
+  const data: { name?: string; workspaceCode?: string } = {};
+  if (rawName !== undefined) {
+    const name = typeof rawName === 'string' ? rawName.trim() : '';
+    if (!name) return res.status(400).json({ error: 'Workspace name is required' });
+    if (name.length > 80) return res.status(400).json({ error: 'Workspace name must be 80 characters or fewer' });
+    data.name = name;
   }
-  const workspace = await prisma.workspace.update({
-    where: { id: workspaceId },
-    data: {
-      ...(name !== undefined ? { name } : {}),
-      ...(workspaceCode !== undefined ? { workspaceCode } : {}),
-    },
-  });
+  if (rawCode !== undefined) {
+    const code = typeof rawCode === 'string' ? rawCode.trim() : '';
+    if (code !== current.workspaceCode) {
+      if (!/^[A-Za-z0-9]{3,16}$/.test(code)) {
+        return res.status(400).json({ error: 'Workspace code must be 3-16 letters or numbers' });
+      }
+      const clash = await prisma.workspace.findUnique({ where: { workspaceCode: code } });
+      if (clash && clash.id !== workspaceId) return res.status(409).json({ error: 'That workspace code is already taken' });
+      data.workspaceCode = code;
+    }
+  }
+  const workspace = await prisma.workspace.update({ where: { id: workspaceId }, data });
   res.json({ id: workspace.id, name: workspace.name, workspaceCode: workspace.workspaceCode, onboardingStep: workspace.onboardingStep });
 });
 
