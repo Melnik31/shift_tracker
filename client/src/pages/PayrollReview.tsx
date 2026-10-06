@@ -1,5 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react';
 import AppHeader from '../components/AppHeader';
+import { BASE as API_BASE } from '../lib/api';
 import {
   usePayrollPeriods,
   usePayrollPeriodDetail,
@@ -130,7 +131,7 @@ export default function PayrollReview() {
             {period && period.status === 'APPROVED' && (
               <>
                 <a
-                  href={`/api/payroll/periods/${period.id}/export`}
+                  href={`${API_BASE}/payroll/periods/${period.id}/export`}
                   className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
                 >
                   Export CSV

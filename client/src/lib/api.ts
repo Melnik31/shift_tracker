@@ -5,7 +5,7 @@
 // origin explicitly in that case. It's just the bare origin (e.g.
 // "https://api.example.com", no trailing /api) — the /api suffix is always
 // appended here, so it doesn't need to be repeated in the env var.
-const BASE = (import.meta.env.VITE_API_URL || '') + '/api';
+export const BASE = (import.meta.env.VITE_API_URL || '') + '/api';
 
 export class ApiError extends Error {
   status: number;
