@@ -21,13 +21,13 @@ export function useEmployeeMutations() {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['employees'] });
 
   const addEmployee = useMutation({
-    mutationFn: (vars: { name: string; roles: string[]; pin: string; employmentType?: EmploymentType; campusIds?: string[] }) =>
+    mutationFn: (vars: { name: string; preferredName?: string; roles: string[]; pin: string; employmentType?: EmploymentType; campusIds?: string[] }) =>
       api.post('/employees', vars),
     onSuccess: invalidate,
   });
 
   const updateEmployee = useMutation({
-    mutationFn: (vars: { id: string; name?: string; roles?: string[]; pin?: string; employmentType?: EmploymentType; campusIds?: string[] }) =>
+    mutationFn: (vars: { id: string; name?: string; preferredName?: string; roles?: string[]; pin?: string; employmentType?: EmploymentType; campusIds?: string[] }) =>
       api.patch(`/employees/${vars.id}`, vars),
     onSuccess: invalidate,
   });

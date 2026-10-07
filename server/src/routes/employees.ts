@@ -4,6 +4,7 @@ import { prisma } from '../db';
 import { requireRole } from '../middleware/auth';
 import { campusScopeFor, employeeCampusMatch } from '../lib/campusScope';
 import { EMPLOYMENT_TYPES } from '../types';
+import { cleanFullName, cleanPreferredName } from '../lib/names';
 
 const router = Router();
 // SENIOR_LEAD_INSTRUCTOR gets the same full-workspace-minus-campus access
@@ -14,6 +15,7 @@ function employeeSelect() {
   return {
     id: true,
     name: true,
+    preferredName: true,
     roles: true,
     employmentType: true,
     createdAt: true,
@@ -71,8 +73,12 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
   const scope = campusScopeFor(req);
-  const { name, roles, pin, employmentType, campusIds: bodyCampusIds } = req.body ?? {};
-  if (!name || !pin) return res.status(400).json({ error: 'name and pin are required' });
+  const { name: rawName, preferredName: rawPreferred, roles, pin, employmentType, campusIds: bodyCampusIds } = req.body ?? {};
+  const fullName = cleanFullName(rawName);
+  if (!fullName.ok) return res.status(400).json({ error: fullName.error });
+  const preferred = cleanPreferredName(rawPreferred);
+  if (!preferred.ok) return res.status(400).json({ error: preferred.error });
+  if (!pin) return res.status(400).json({ error: 'pin is required' });
   if (!/^\d{4}$/.test(pin)) return res.status(400).json({ error: 'pin must be exactly 4 digits' });
   if (employmentType !== undefined && !EMPLOYMENT_TYPES.includes(employmentType)) {
     return res.status(400).json({ error: `employmentType must be one of ${EMPLOYMENT_TYPES.join(', ')}` });
@@ -95,7 +101,8 @@ router.post('/', async (req, res) => {
   const employee = await prisma.employee.create({
     data: {
       workspaceId,
-      name,
+      name: fullName.value,
+      preferredName: preferred.value,
       roles: parsedRoles,
       employmentType: employmentType || 'PT',
       pinHash: bcrypt.hashSync(pin, 10),
@@ -118,7 +125,19 @@ router.patch('/:id', async (req, res) => {
   });
   if (!existing) return res.status(404).json({ error: 'Employee not found' });
 
-  const { name, roles, pin, employmentType, campusIds: bodyCampusIds } = req.body ?? {};
+  const { name: rawName, preferredName: rawPreferred, roles, pin, employmentType, campusIds: bodyCampusIds } = req.body ?? {};
+  let fullName: string | undefined;
+  if (rawName !== undefined) {
+    const r = cleanFullName(rawName);
+    if (!r.ok) return res.status(400).json({ error: r.error });
+    fullName = r.value;
+  }
+  let preferred: string | null | undefined;
+  if (rawPreferred !== undefined) {
+    const r = cleanPreferredName(rawPreferred);
+    if (!r.ok) return res.status(400).json({ error: r.error });
+    preferred = r.value;
+  }
   if (pin && !/^\d{4}$/.test(pin)) return res.status(400).json({ error: 'pin must be exactly 4 digits' });
   if (employmentType !== undefined && !EMPLOYMENT_TYPES.includes(employmentType)) {
     return res.status(400).json({ error: `employmentType must be one of ${EMPLOYMENT_TYPES.join(', ')}` });
@@ -153,7 +172,8 @@ router.patch('/:id', async (req, res) => {
   const employee = await prisma.employee.update({
     where: { id: existing.id },
     data: {
-      ...(name !== undefined ? { name } : {}),
+      ...(fullName !== undefined ? { name: fullName } : {}),
+      ...(preferred !== undefined ? { preferredName: preferred } : {}),
       ...(parsedRoles !== undefined ? { roles: parsedRoles } : {}),
       ...(employmentType !== undefined ? { employmentType } : {}),
       ...(pin ? { pinHash: bcrypt.hashSync(pin, 10) } : {}),

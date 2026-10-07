@@ -174,7 +174,7 @@ router.get('/me', async (req, res) => {
   const employee = await prisma.employee.findUnique({ where: { id: req.session.actorId } });
   res.json({
     actorType: 'employee',
-    employee: employee ? { id: employee.id, name: employee.name, roles: employee.roles } : null,
+    employee: employee ? { id: employee.id, name: employee.name, preferredName: employee.preferredName, roles: employee.roles } : null,
     workspace: { id: workspace.id, name: workspace.name },
   });
 });

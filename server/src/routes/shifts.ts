@@ -50,7 +50,7 @@ function isBulkRowFilled(dataType: string, row: Record<string, unknown>): boolea
 
 function cellValueInclude() {
   return {
-    staffAssignments: { include: { employee: { select: { id: true, name: true } } } },
+    staffAssignments: { include: { employee: { select: { id: true, name: true, preferredName: true } } } },
     fileUploads: true,
   } as const;
 }

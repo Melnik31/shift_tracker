@@ -66,6 +66,7 @@ export interface Campus {
 export interface AdminUserAccount {
   id: string;
   name: string | null;
+  preferredName: string | null;
   email: string;
   role: AssignableAdminRole;
   active: boolean;
@@ -77,6 +78,7 @@ export interface AdminUserAccount {
 export interface Employee {
   id: string;
   name: string;
+  preferredName?: string | null;
   roles: string[];
   employmentType: EmploymentType;
   campuses: { id: string; name: string }[];
@@ -169,7 +171,7 @@ export interface EventSubRowInfo {
   textValue: string | null;
   linkUrl: string | null;
   statusValue: StatusValue | null;
-  staff: { id: string; name: string }[];
+  staff: { id: string; name: string; preferredName?: string | null }[];
   files: { id: string; filename: string; url: string }[];
 }
 
@@ -182,7 +184,7 @@ export interface EmployeeDayShift {
   subRowLabel: string;
   locationName: string;
   sectionName: string;
-  coworkers: { id: string; name: string }[];
+  coworkers: { id: string; name: string; preferredName?: string | null }[];
   event: EventSubRowInfo[];
 }
 

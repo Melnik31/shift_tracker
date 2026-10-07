@@ -17,7 +17,7 @@ export interface EventSubRowInfo {
   textValue: string | null;
   linkUrl: string | null;
   statusValue: string | null;
-  staff: { id: string; name: string }[];
+  staff: { id: string; name: string; preferredName: string | null }[];
   files: { id: string; filename: string; url: string }[];
 }
 
@@ -30,7 +30,7 @@ export interface EmployeeDayShift {
   subRowLabel: string;
   locationName: string;
   sectionName: string;
-  coworkers: { id: string; name: string }[]; // others assigned to this same row/shift
+  coworkers: { id: string; name: string; preferredName: string | null }[]; // others assigned to this same row/shift
   event: EventSubRowInfo[]; // other rows at the same location overlapping this shift's time
 }
 
@@ -68,7 +68,7 @@ async function getEventContext(
       subRow: true,
       cellValues: {
         include: {
-          staffAssignments: { include: { employee: { select: { id: true, name: true } } } },
+          staffAssignments: { include: { employee: { select: { id: true, name: true, preferredName: true } } } },
           fileUploads: true,
         },
       },
@@ -90,7 +90,7 @@ async function getEventContext(
         textValue: cv?.textValue ?? null,
         linkUrl: cv?.linkUrl ?? null,
         statusValue: cv?.statusValue ?? null,
-        staff: cv?.staffAssignments.map((a) => ({ id: a.employee.id, name: a.employee.name })) ?? [],
+        staff: cv?.staffAssignments.map((a) => ({ id: a.employee.id, name: a.employee.name, preferredName: a.employee.preferredName })) ?? [],
         files: cv?.fileUploads.map((f) => ({ id: f.id, filename: f.filename, url: f.url })) ?? [],
       };
     })
@@ -114,7 +114,7 @@ export async function getEmployeeDaySummaries(
               subRow: { include: { location: { include: { section: true } } } },
             },
           },
-          staffAssignments: { include: { employee: { select: { id: true, name: true } } } },
+          staffAssignments: { include: { employee: { select: { id: true, name: true, preferredName: true } } } },
         },
       },
     },
@@ -140,7 +140,7 @@ export async function getEmployeeDaySummaries(
         sectionName: shift.subRow.location.section.name,
         coworkers: a.cellValue.staffAssignments
           .filter((sa) => sa.employeeId !== employeeId)
-          .map((sa) => ({ id: sa.employee.id, name: sa.employee.name })),
+          .map((sa) => ({ id: sa.employee.id, name: sa.employee.name, preferredName: sa.employee.preferredName })),
         event,
       };
     })

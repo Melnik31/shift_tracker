@@ -14,14 +14,14 @@ export function useAdminMutations() {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['admins'] });
 
   const addAdmin = useMutation({
-    mutationFn: (vars: { name?: string; email: string; password: string; role: string; campusId?: string }) => api.post('/admin-users', vars),
+    mutationFn: (vars: { name: string; preferredName?: string; email: string; password: string; role: string; campusId?: string }) => api.post('/admin-users', vars),
     onSuccess: invalidate,
   });
 
   // role is deliberately not accepted here — the server rejects it. Use
   // changeRole below, which requires a reason and is audited.
   const updateAdmin = useMutation({
-    mutationFn: (vars: { id: string; email?: string; password?: string; campusId?: string }) => api.patch(`/admin-users/${vars.id}`, vars),
+    mutationFn: (vars: { id: string; name?: string; preferredName?: string; email?: string; password?: string; campusId?: string }) => api.patch(`/admin-users/${vars.id}`, vars),
     onSuccess: invalidate,
   });
 

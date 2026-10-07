@@ -1,4 +1,5 @@
 import { Fragment, useState } from 'react';
+import { scheduleName } from '../lib/names';
 import { CellValue, SubRow } from '../lib/types';
 import { STATUS_COLORS } from '../lib/constants';
 
@@ -94,7 +95,7 @@ function StaffCell({ cellValue }: { cellValue: CellValue }) {
 
   if (cellValue.staffAssignments.length === 0) return <EmptyHint />;
 
-  const names = cellValue.staffAssignments.map((a) => a.employee.name);
+  const names = cellValue.staffAssignments.map((a) => scheduleName(a.employee));
   const visible = names.length > 3 ? names.slice(0, 2) : names;
   const remaining = names.slice(visible.length);
 

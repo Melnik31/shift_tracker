@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { cleanFullName, cleanPreferredName } from '../lib/names';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../db';
 import { requireRole } from '../middleware/auth';
@@ -20,6 +21,7 @@ function isCampusScopedRole(role: AssignableAdminRole): boolean {
 function adminSummary(admin: {
   id: string;
   name: string | null;
+  preferredName: string | null;
   email: string;
   role: string;
   active: boolean;
@@ -30,6 +32,7 @@ function adminSummary(admin: {
   return {
     id: admin.id,
     name: admin.name,
+    preferredName: admin.preferredName,
     email: admin.email,
     role: admin.role,
     active: admin.active,
@@ -76,14 +79,18 @@ async function resolveCampusForRole(
   return { ok: true, campusId: campus.id };
 }
 
-// POST /api/admin-users { name?, email, password, role, campusId? } —
+// POST /api/admin-users { name, preferredName?, email, password, role, campusId? } —
 // always creates with mustChangePassword: true (a temp password the new
 // admin must replace on first login, see routes/auth.ts) and logs a
 // RoleChange row (oldRole: null) so account creation shows up in the same
 // audit trail as every later promotion/demotion.
 router.post('/', async (req, res) => {
   const workspaceId = req.session.workspaceId!;
-  const { name, email, password, role, campusId: bodyCampusId } = req.body ?? {};
+  const { name: rawName, preferredName: rawPreferred, email, password, role, campusId: bodyCampusId } = req.body ?? {};
+  const fullName = cleanFullName(rawName);
+  if (!fullName.ok) return res.status(400).json({ error: fullName.error });
+  const preferred = cleanPreferredName(rawPreferred);
+  if (!preferred.ok) return res.status(400).json({ error: preferred.error });
   if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
   if (!isAssignableRole(role)) return res.status(400).json({ error: `role must be one of ${ASSIGNABLE_ADMIN_ROLES.join(', ')}` });
 
@@ -96,7 +103,8 @@ router.post('/', async (req, res) => {
   const admin = await prisma.adminUser.create({
     data: {
       workspaceId,
-      name: name || null,
+      name: fullName.value,
+      preferredName: preferred.value,
       email,
       passwordHash: bcrypt.hashSync(password, 10),
       role,
@@ -111,7 +119,7 @@ router.post('/', async (req, res) => {
   res.status(201).json(adminSummary(admin));
 });
 
-// PATCH /api/admin-users/:id { email?, password?, campusId? } — role is
+// PATCH /api/admin-users/:id { name?, preferredName?, email?, password?, campusId? } — role is
 // deliberately NOT accepted here anymore: every role change must go
 // through PATCH /:id/role below, which requires a reason and writes a
 // RoleChange audit row. A plain campusId (no role change — e.g. moving a
@@ -126,7 +134,19 @@ router.patch('/:id', async (req, res) => {
   const existing = await prisma.adminUser.findFirst({ where: { id: req.params.id, workspaceId } });
   if (!existing) return res.status(404).json({ error: 'Admin not found' });
 
-  const { email, password, role, campusId: bodyCampusId } = req.body ?? {};
+  const { name: rawName, preferredName: rawPreferred, email, password, role, campusId: bodyCampusId } = req.body ?? {};
+  let fullName: string | undefined;
+  if (rawName !== undefined) {
+    const r = cleanFullName(rawName);
+    if (!r.ok) return res.status(400).json({ error: r.error });
+    fullName = r.value;
+  }
+  let preferred: string | null | undefined;
+  if (rawPreferred !== undefined) {
+    const r = cleanPreferredName(rawPreferred);
+    if (!r.ok) return res.status(400).json({ error: r.error });
+    preferred = r.value;
+  }
   if (role !== undefined) {
     return res.status(400).json({ error: 'Use PATCH /api/admin-users/:id/role to change role (requires a reason and is audited)' });
   }
@@ -145,6 +165,8 @@ router.patch('/:id', async (req, res) => {
   const admin = await prisma.adminUser.update({
     where: { id: existing.id },
     data: {
+      ...(fullName !== undefined ? { name: fullName } : {}),
+      ...(preferred !== undefined ? { preferredName: preferred } : {}),
       ...(email !== undefined ? { email } : {}),
       ...(password ? { passwordHash: bcrypt.hashSync(password, 10) } : {}),
       campusId,

@@ -20,14 +20,14 @@ describe('admin-users role gating (requireRole ADMIN/CEO)', () => {
 
     expect((await coachAgent.get('/api/admin-users')).status).toBe(404);
     expect((await directorAgent.get('/api/admin-users')).status).toBe(404);
-    expect((await directorAgent.post('/api/admin-users').send({ email: 'x@x.com', password: 'x', role: 'ADMIN' })).status).toBe(404);
+    expect((await directorAgent.post('/api/admin-users').send({ name: 'Test Admin', email: 'x@x.com', password: 'x', role: 'ADMIN' })).status).toBe(404);
   });
 
   it('CEO gets identical, full access to ADMIN', async () => {
     const { agent: adminAgent, workspace } = await signupAdmin(app, { workspaceCode: 'AD2' });
     const ceoAgent = await seedAdminWithRole(app, workspace.id, 'ceo@ad2.example', 'CEO');
 
-    const created = await ceoAgent.post('/api/admin-users').send({ email: 'new@ad2.example', password: 'pw123456', role: 'ADMIN' });
+    const created = await ceoAgent.post('/api/admin-users').send({ name: 'Test Admin', email: 'new@ad2.example', password: 'pw123456', role: 'ADMIN' });
     expect(created.status).toBe(201);
     expect((await adminAgent.get('/api/admin-users')).status).toBe(200);
   });
@@ -37,7 +37,7 @@ describe('GET /api/admin-users', () => {
   it('lists every admin in the workspace including self, and never returns passwordHash', async () => {
     const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'AD3', email: 'boss@ad3.example' });
     const defaultCampus = await getDefaultCampus(workspace.id);
-    await agent.post('/api/admin-users').send({ email: 'dir@ad3.example', password: 'pw123456', role: 'DIRECTOR', campusId: defaultCampus.id });
+    await agent.post('/api/admin-users').send({ name: 'Test Admin', email: 'dir@ad3.example', password: 'pw123456', role: 'DIRECTOR', campusId: defaultCampus.id });
 
     const res = await agent.get('/api/admin-users');
     expect(res.status).toBe(200);
@@ -72,7 +72,7 @@ describe('POST /api/admin-users', () => {
     const { agent } = await signupAdmin(app, { workspaceCode: 'AD4B' });
     const rootAdmin = (await agent.get('/api/admin-users')).body.admins[0];
 
-    const created = await agent.post('/api/admin-users').send({ email: 'dir@ad4b.example', password: 'pw123456', role: 'ADMIN' });
+    const created = await agent.post('/api/admin-users').send({ name: 'Test Admin', email: 'dir@ad4b.example', password: 'pw123456', role: 'ADMIN' });
     expect(created.status).toBe(201);
 
     const changes = await prisma.roleChange.findMany({ where: { targetUserId: created.body.id } });
@@ -86,12 +86,12 @@ describe('POST /api/admin-users', () => {
   it('rejects DIRECTOR/SENIOR_LEAD_INSTRUCTOR with no campusId (400)', async () => {
     const { agent } = await signupAdmin(app, { workspaceCode: 'AD5' });
 
-    const res = await agent.post('/api/admin-users').send({ email: 'dir@ad5.example', password: 'pw123456', role: 'DIRECTOR' });
+    const res = await agent.post('/api/admin-users').send({ name: 'Test Admin', email: 'dir@ad5.example', password: 'pw123456', role: 'DIRECTOR' });
     expect(res.status).toBe(400);
 
     const res2 = await agent
       .post('/api/admin-users')
-      .send({ email: 'sli@ad5.example', password: 'pw123456', role: 'SENIOR_LEAD_INSTRUCTOR' });
+      .send({ name: 'Test Admin', email: 'sli@ad5.example', password: 'pw123456', role: 'SENIOR_LEAD_INSTRUCTOR' });
     expect(res2.status).toBe(400);
   });
 
@@ -102,7 +102,7 @@ describe('POST /api/admin-users', () => {
 
     const res = await agent
       .post('/api/admin-users')
-      .send({ email: 'dir@ad6.example', password: 'pw123456', role: 'DIRECTOR', campusId: foreignCampus.id });
+      .send({ name: 'Test Admin', email: 'dir@ad6.example', password: 'pw123456', role: 'DIRECTOR', campusId: foreignCampus.id });
     expect(res.status).toBe(404);
   });
 
@@ -113,7 +113,7 @@ describe('POST /api/admin-users', () => {
 
     const res = await agent
       .post('/api/admin-users')
-      .send({ email: 'dir@ad7.example', password: 'pw123456', role: 'DIRECTOR', campusId: second.id });
+      .send({ name: 'Test Admin', email: 'dir@ad7.example', password: 'pw123456', role: 'DIRECTOR', campusId: second.id });
     expect(res.status).toBe(400);
   });
 
@@ -123,28 +123,28 @@ describe('POST /api/admin-users', () => {
 
     const res = await agent
       .post('/api/admin-users')
-      .send({ email: 'admin2@ad8.example', password: 'pw123456', role: 'ADMIN', campusId: defaultCampus.id });
+      .send({ name: 'Test Admin', email: 'admin2@ad8.example', password: 'pw123456', role: 'ADMIN', campusId: defaultCampus.id });
     expect(res.status).toBe(201);
     expect(res.body.campus).toBeNull();
   });
 
   it('409s a duplicate email within the workspace', async () => {
     const { agent } = await signupAdmin(app, { workspaceCode: 'AD9', email: 'boss@ad9.example' });
-    const res = await agent.post('/api/admin-users').send({ email: 'boss@ad9.example', password: 'pw123456', role: 'ADMIN' });
+    const res = await agent.post('/api/admin-users').send({ name: 'Test Admin', email: 'boss@ad9.example', password: 'pw123456', role: 'ADMIN' });
     expect(res.status).toBe(409);
   });
 
   it('400s an invalid role, and never accepts COACH', async () => {
     const { agent } = await signupAdmin(app, { workspaceCode: 'AD10' });
-    expect((await agent.post('/api/admin-users').send({ email: 'x@ad10.example', password: 'pw123456', role: 'MANAGER' })).status).toBe(400);
-    expect((await agent.post('/api/admin-users').send({ email: 'y@ad10.example', password: 'pw123456', role: 'COACH' })).status).toBe(400);
+    expect((await agent.post('/api/admin-users').send({ name: 'Test Admin', email: 'x@ad10.example', password: 'pw123456', role: 'MANAGER' })).status).toBe(400);
+    expect((await agent.post('/api/admin-users').send({ name: 'Test Admin', email: 'y@ad10.example', password: 'pw123456', role: 'COACH' })).status).toBe(400);
   });
 });
 
 describe('PATCH /api/admin-users/:id', () => {
   it('400s if the body includes role — must use PATCH /:id/role instead', async () => {
     const { agent } = await signupAdmin(app, { workspaceCode: 'AD11C' });
-    const created = (await agent.post('/api/admin-users').send({ email: 'x@ad11c.example', password: 'pw123456', role: 'ADMIN' })).body;
+    const created = (await agent.post('/api/admin-users').send({ name: 'Test Admin', email: 'x@ad11c.example', password: 'pw123456', role: 'ADMIN' })).body;
 
     const res = await agent.patch(`/api/admin-users/${created.id}`).send({ role: 'DIRECTOR' });
     expect(res.status).toBe(400);
@@ -158,7 +158,7 @@ describe('PATCH /api/admin-users/:id', () => {
     const defaultCampus = await getDefaultCampus(workspace.id);
     const second = (await agent.post('/api/campuses').send({ name: 'Second' })).body;
     const created = (
-      await agent.post('/api/admin-users').send({ email: 'x@ad11.example', password: 'pw123456', role: 'DIRECTOR', campusId: defaultCampus.id })
+      await agent.post('/api/admin-users').send({ name: 'Test Admin', email: 'x@ad11.example', password: 'pw123456', role: 'DIRECTOR', campusId: defaultCampus.id })
     ).body;
 
     const res = await agent.patch(`/api/admin-users/${created.id}`).send({ campusId: second.id });
@@ -170,7 +170,7 @@ describe('PATCH /api/admin-users/:id', () => {
     const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'AD13' });
     const defaultCampus = await getDefaultCampus(workspace.id);
     const created = (
-      await agent.post('/api/admin-users').send({ email: 'x@ad13.example', password: 'pw123456', role: 'DIRECTOR', campusId: defaultCampus.id })
+      await agent.post('/api/admin-users').send({ name: 'Test Admin', email: 'x@ad13.example', password: 'pw123456', role: 'DIRECTOR', campusId: defaultCampus.id })
     ).body;
 
     const res = await agent.patch(`/api/admin-users/${created.id}`).send({ email: 'renamed@ad13.example' });
@@ -184,7 +184,7 @@ describe('PATCH /api/admin-users/:id', () => {
     const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'AD13B' });
     const second = (await agent.post('/api/campuses').send({ name: 'Second' })).body;
     const created = (
-      await agent.post('/api/admin-users').send({ email: 'x@ad13b.example', password: 'pw123456', role: 'DIRECTOR', campusId: second.id })
+      await agent.post('/api/admin-users').send({ name: 'Test Admin', email: 'x@ad13b.example', password: 'pw123456', role: 'DIRECTOR', campusId: second.id })
     ).body;
 
     await agent.post(`/api/campuses/${second.id}/deactivate`);
@@ -208,7 +208,7 @@ describe('PATCH /api/admin-users/:id/role', () => {
   it('changing role INTO a campus-scoped role requires a campusId in the same request, and logs a RoleChange row', async () => {
     const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'AR1' });
     const defaultCampus = await getDefaultCampus(workspace.id);
-    const created = (await agent.post('/api/admin-users').send({ email: 'x@ar1.example', password: 'pw123456', role: 'ADMIN' })).body;
+    const created = (await agent.post('/api/admin-users').send({ name: 'Test Admin', email: 'x@ar1.example', password: 'pw123456', role: 'ADMIN' })).body;
 
     const withoutCampus = await agent.patch(`/api/admin-users/${created.id}/role`).send({ newRole: 'DIRECTOR', reason: 'Reorg' });
     expect(withoutCampus.status).toBe(400);
@@ -234,7 +234,7 @@ describe('PATCH /api/admin-users/:id/role', () => {
     const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'AR2' });
     const defaultCampus = await getDefaultCampus(workspace.id);
     const created = (
-      await agent.post('/api/admin-users').send({ email: 'x@ar2.example', password: 'pw123456', role: 'DIRECTOR', campusId: defaultCampus.id })
+      await agent.post('/api/admin-users').send({ name: 'Test Admin', email: 'x@ar2.example', password: 'pw123456', role: 'DIRECTOR', campusId: defaultCampus.id })
     ).body;
 
     const res = await agent
@@ -246,7 +246,7 @@ describe('PATCH /api/admin-users/:id/role', () => {
 
   it('400s a missing or blank reason', async () => {
     const { agent } = await signupAdmin(app, { workspaceCode: 'AR3' });
-    const created = (await agent.post('/api/admin-users').send({ email: 'x@ar3.example', password: 'pw123456', role: 'ADMIN' })).body;
+    const created = (await agent.post('/api/admin-users').send({ name: 'Test Admin', email: 'x@ar3.example', password: 'pw123456', role: 'ADMIN' })).body;
 
     expect((await agent.patch(`/api/admin-users/${created.id}/role`).send({ newRole: 'CEO' })).status).toBe(400);
     expect((await agent.patch(`/api/admin-users/${created.id}/role`).send({ newRole: 'CEO', reason: '   ' })).status).toBe(400);
@@ -291,7 +291,7 @@ describe('PATCH /api/admin-users/:id/role', () => {
     const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'AR7' });
     const defaultCampus = await getDefaultCampus(workspace.id);
     const directorAgent = await seedAdminWithRole(app, workspace.id, 'director@ar7.example', 'DIRECTOR', { campusId: defaultCampus.id });
-    const target = (await agent.post('/api/admin-users').send({ email: 'x@ar7.example', password: 'pw123456', role: 'ADMIN' })).body;
+    const target = (await agent.post('/api/admin-users').send({ name: 'Test Admin', email: 'x@ar7.example', password: 'pw123456', role: 'ADMIN' })).body;
 
     const res = await directorAgent.patch(`/api/admin-users/${target.id}/role`).send({ newRole: 'CEO', reason: 'x' });
     expect(res.status).toBe(404);
@@ -318,7 +318,7 @@ describe('deactivate / activate', () => {
     // the "last admin" case with only two agents).
     const { agent: rootAgent, workspace } = await signupAdmin(app, { workspaceCode: 'AD16' });
     const ceoAgent = await seedAdminWithRole(app, workspace.id, 'ceo@ad16.example', 'CEO');
-    const third = (await rootAgent.post('/api/admin-users').send({ email: 'third@ad16.example', password: 'pw123456', role: 'ADMIN' })).body;
+    const third = (await rootAgent.post('/api/admin-users').send({ name: 'Test Admin', email: 'third@ad16.example', password: 'pw123456', role: 'ADMIN' })).body;
 
     const rootSelf = (await rootAgent.get('/api/admin-users')).body.admins.find((a: any) => a.email !== 'ceo@ad16.example' && a.email !== 'third@ad16.example');
 
@@ -337,7 +337,7 @@ describe('deactivate / activate', () => {
     const { agent, workspace } = await signupAdmin(app, { workspaceCode: 'AD17' });
     const ceoAgent = await seedAdminWithRole(app, workspace.id, 'ceo@ad17.example', 'CEO');
     const target = (
-      await agent.post('/api/admin-users').send({ email: 'dir@ad17.example', password: 'pw123456', role: 'ADMIN' })
+      await agent.post('/api/admin-users').send({ name: 'Test Admin', email: 'dir@ad17.example', password: 'pw123456', role: 'ADMIN' })
     ).body;
 
     expect((await ceoAgent.post(`/api/admin-users/${target.id}/deactivate`)).status).toBe(200);

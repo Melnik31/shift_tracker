@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { scheduleName } from '../lib/names';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
@@ -40,7 +41,7 @@ export default function MyShifts() {
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
         <div>
-          <h1 className="text-base font-semibold text-slate-800">{me?.employee?.name}</h1>
+          <h1 className="text-base font-semibold text-slate-800">{me?.employee ? scheduleName(me.employee) : ''}</h1>
           <p className="text-xs text-slate-400">{me?.workspace.name}</p>
         </div>
         <div className="flex items-center gap-3">
@@ -229,7 +230,7 @@ function ShiftEventDetails({ shift }: { shift: EmployeeDayShift }) {
     <div className="mt-2 rounded-md bg-slate-50 border border-slate-100 px-3 py-2 space-y-1.5">
       {shift.coworkers.length > 0 && (
         <p className="text-xs text-slate-600">
-          <span className="text-slate-400">With:</span> {shift.coworkers.map((c) => c.name).join(', ')}
+          <span className="text-slate-400">With:</span> {shift.coworkers.map((c) => scheduleName(c)).join(', ')}
         </p>
       )}
       {shift.event.map((e) => (
@@ -287,7 +288,7 @@ function EventRow({ info }: { info: EventSubRowInfo }) {
     case 'STAFF':
       return info.staff.length > 0 ? (
         <p className="text-xs text-slate-600">
-          <span className="text-slate-400">{info.subRowLabel}:</span> {info.staff.map((s) => s.name).join(', ')}
+          <span className="text-slate-400">{info.subRowLabel}:</span> {info.staff.map((s) => scheduleName(s)).join(', ')}
         </p>
       ) : null;
 

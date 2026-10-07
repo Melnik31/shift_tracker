@@ -79,7 +79,8 @@ model Campus {
 model AdminUser {
   id           String   @id @default(uuid())
   workspaceId  String
-  name         String?  // optional; existing accounts predate this field
+  name         String?  // full name; required on create, null only on accounts that predate it
+  preferredName String? // optional; same meaning as Employee.preferredName
   email        String
   passwordHash String
   role         String   @default("ADMIN")
@@ -136,6 +137,9 @@ model Employee {
   id          String   @id @default(uuid())
   workspaceId String
   name        String
+  // Optional name shown on the schedule (Matrix, staff pickers, My Shifts);
+  // every other screen, payroll included, uses the full `name`.
+  preferredName String?
   pinHash     String
   // Free-text job titles, e.g. "Skater Coach" — plain strings, not an FK to
   // any Role entity (same convention as dataType/statusValue elsewhere in

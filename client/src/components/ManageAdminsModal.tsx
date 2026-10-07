@@ -4,6 +4,7 @@ import { useCampuses } from '../hooks/useCampuses';
 import { useAuth } from '../hooks/useAuth';
 import { useConfirm } from './ConfirmProvider';
 import { ASSIGNABLE_ADMIN_ROLES, AssignableAdminRole, AdminUserAccount, CAMPUS_SCOPED_ROLES, Campus } from '../lib/types';
+import { matchesName } from '../lib/names';
 import { BTN_PRIMARY, BTN_SECONDARY, INPUT, ManageShell, Pill, RowMenu, TH } from './ManageShell';
 
 function isCampusScoped(role: AssignableAdminRole): boolean {
@@ -25,7 +26,7 @@ export default function ManageAdminsModal({ onClose }: { onClose: () => void }) 
   const [error, setError] = useState<string | null>(null);
 
   const q = search.trim().toLowerCase();
-  const admins = (data?.admins ?? []).filter((a) => !q || a.email.toLowerCase().includes(q) || (a.name ?? '').toLowerCase().includes(q));
+  const admins = (data?.admins ?? []).filter((a) => !q || a.email.toLowerCase().includes(q) || matchesName({ name: a.name ?? '', preferredName: a.preferredName }, q));
 
   async function toggleActive(admin: AdminUserAccount) {
     setError(null);
@@ -153,6 +154,8 @@ function EditAdminForm({
   mutations: ReturnType<typeof useAdminMutations>;
   onDone: () => void;
 }) {
+  const [name, setName] = useState(admin.name ?? '');
+  const [preferredName, setPreferredName] = useState(admin.preferredName ?? '');
   const [email, setEmail] = useState(admin.email);
   const [role, setRole] = useState<AssignableAdminRole>(admin.role);
   const [campusId, setCampusId] = useState(admin.campus?.id ?? '');
@@ -164,13 +167,22 @@ function EditAdminForm({
 
   async function save() {
     const nextEmail = email.trim();
+    const nextName = name.trim();
     if (!nextEmail) return setError('Email is required');
+    // Accounts created before full names existed have none; only require one once it's set or typed.
+    if (!nextName && admin.name) return setError('Full name is required');
     if (roleChanged && !reason.trim()) return setError('A reason is required to change role');
     if (scoped && !campusId) return setError('Select a campus for this role');
     setError(null);
     setSaving(true);
     try {
-      if (nextEmail !== admin.email) await mutations.updateAdmin.mutateAsync({ id: admin.id, email: nextEmail });
+      const nextPreferred = preferredName.trim();
+      const profile = {
+        ...(nextName && nextName !== (admin.name ?? '') ? { name: nextName } : {}),
+        ...(nextPreferred !== (admin.preferredName ?? '') ? { preferredName: nextPreferred } : {}),
+        ...(nextEmail !== admin.email ? { email: nextEmail } : {}),
+      };
+      if (Object.keys(profile).length > 0) await mutations.updateAdmin.mutateAsync({ id: admin.id, ...profile });
       if (roleChanged) {
         await mutations.changeRole.mutateAsync({
           id: admin.id,
@@ -192,6 +204,14 @@ function EditAdminForm({
   return (
     <div className="space-y-3 pt-1">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label className="block">
+          <span className="block text-xs font-medium text-slate-500 mb-1">Full name</span>
+          <input id={`admin-full-name-${admin.id}`} className={`${INPUT} w-full`} value={name} onChange={(e) => setName(e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="block text-xs font-medium text-slate-500 mb-1">Preferred name (optional)</span>
+          <input id={`admin-preferred-name-${admin.id}`} className={`${INPUT} w-full`} value={preferredName} onChange={(e) => setPreferredName(e.target.value)} />
+        </label>
         <label className="block">
           <span className="block text-xs font-medium text-slate-500 mb-1">Email</span>
           <input className={`${INPUT} w-full`} value={email} onChange={(e) => setEmail(e.target.value)} />

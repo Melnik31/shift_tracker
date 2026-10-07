@@ -6,6 +6,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useLayout } from '../hooks/useLayout';
 import { ASSIGNABLE_ADMIN_ROLES, AssignableAdminRole, CAMPUS_SCOPED_ROLES, Employee, EMPLOYMENT_TYPES, EmploymentType } from '../lib/types';
 import { collectStaffFieldLabels } from '../lib/staffRoles';
+import { matchesName } from '../lib/names';
 import Modal from './Modal';
 import { useConfirm } from './ConfirmProvider';
 
@@ -233,7 +234,7 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
   const tabEmployees = useMemo(() => employees.filter((e) => e.employmentType === activeTab), [employees, activeTab]);
   const visibleEmployees = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return term ? tabEmployees.filter((e) => e.name.toLowerCase().includes(term)) : tabEmployees;
+    return term ? tabEmployees.filter((e) => matchesName(e, term)) : tabEmployees;
   }, [tabEmployees, search]);
 
   function selectTab(t: EmploymentType) {
@@ -254,6 +255,7 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
   const [formMode, setFormMode] = useState<'add' | 'edit'>('add');
   const [accessLevel, setAccessLevel] = useState<AccessLevel>('COACH');
   const [name, setName] = useState('');
+  const [preferredName, setPreferredName] = useState('');
   const [employeeRoles, setEmployeeRoles] = useState<string[]>([]);
   const [newEmployeeCampusIds, setNewEmployeeCampusIds] = useState<string[]>(matrixCampusId ? [matrixCampusId] : []);
   const [pin, setPin] = useState('');
@@ -265,6 +267,7 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
 
   // ── Edit form state (single or bulk) ─────────────────────────────────
   const [editName, setEditName] = useState('');
+  const [editPreferredName, setEditPreferredName] = useState('');
   const [editRoles, setEditRoles] = useState<string[]>([]); // single: the employee's current roles; bulk: roles to ADD to every selected employee
   const [editCampusIds, setEditCampusIds] = useState<string[]>([]);
   const [editEmploymentType, setEditEmploymentType] = useState<EmploymentType>('PT');
@@ -276,6 +279,7 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
   function resetAddForm() {
     setAccessLevel('COACH');
     setName('');
+    setPreferredName('');
     setEmployeeRoles([]);
     setNewEmployeeCampusIds(matrixCampusId ? [matrixCampusId] : []);
     setPin('');
@@ -302,12 +306,14 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
       const emp = employees.find((e) => selectedIds.has(e.id));
       if (emp) {
         setEditName(emp.name);
+        setEditPreferredName(emp.preferredName ?? '');
         setEditRoles(emp.roles);
         setEditCampusIds(emp.campuses.map((c) => c.id));
         setEditEmploymentType(emp.employmentType);
       }
     } else {
       setEditName('');
+      setEditPreferredName('');
       setEditRoles([]);
       setEditCampusIds([]);
       setEditEmploymentType('PT');
@@ -325,6 +331,11 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
     e.preventDefault();
     setError(null);
 
+    if (!name.trim()) {
+      setError('Full name is required');
+      return;
+    }
+
     if (accessLevel === 'COACH') {
       if (!/^\d{4}$/.test(pin)) {
         setError('PIN must be exactly 4 digits');
@@ -332,7 +343,8 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
       }
       try {
         await addEmployee.mutateAsync({
-          name,
+          name: name.trim(),
+          preferredName: preferredName.trim() || undefined,
           roles: employeeRoles,
           pin,
           employmentType: newEmploymentType,
@@ -351,7 +363,8 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
     }
     try {
       await addAdmin.mutateAsync({
-        name: name.trim() || undefined,
+        name: name.trim(),
+        preferredName: preferredName.trim() || undefined,
         email,
         password: tempPassword,
         role: accessLevel,
@@ -371,12 +384,17 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
       setError('New PIN must be exactly 4 digits');
       return;
     }
+    if (selectedIds.size === 1 && !editName.trim()) {
+      setError('Full name is required');
+      return;
+    }
 
     if (selectedIds.size === 1) {
       const id = [...selectedIds][0];
       updateEmployee.mutate({
         id,
-        name: editName,
+        name: editName.trim(),
+        preferredName: editPreferredName.trim(),
         roles: editRoles,
         campusIds: editCampusIds,
         employmentType: editEmploymentType,
@@ -559,15 +577,28 @@ export default function ManageTeamModal({ onClose, campusId: matrixCampusId }: {
         <Section title="Details">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {!editingBulk && (
-              <Field label="Name">
-                <input
-                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-                  placeholder={formMode === 'add' && accessLevel !== 'COACH' ? 'Name (optional)' : 'Employee name'}
-                  value={formMode === 'add' ? name : editName}
-                  onChange={(e) => (formMode === 'add' ? setName(e.target.value) : setEditName(e.target.value))}
-                  required={formMode === 'add' ? accessLevel === 'COACH' : true}
-                />
-              </Field>
+              <>
+                <Field label="Full name">
+                  <input
+                    id="employee-full-name"
+                    className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                    placeholder="Full legal name"
+                    value={formMode === 'add' ? name : editName}
+                    onChange={(e) => (formMode === 'add' ? setName(e.target.value) : setEditName(e.target.value))}
+                    required
+                  />
+                </Field>
+                <Field label="Preferred name (optional)">
+                  <input
+                    id="employee-preferred-name"
+                    className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                    placeholder="Shown on the schedule"
+                    value={formMode === 'add' ? preferredName : editPreferredName}
+                    onChange={(e) => (formMode === 'add' ? setPreferredName(e.target.value) : setEditPreferredName(e.target.value))}
+                  />
+                  <span className="block text-xs text-slate-400 mt-1">Payroll always uses the full name.</span>
+                </Field>
+              </>
             )}
             {(formMode === 'add' ? accessLevel === 'COACH' : true) && (
               <Field label="Employment type">

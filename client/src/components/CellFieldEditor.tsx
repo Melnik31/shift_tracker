@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { matchesName, scheduleName } from '../lib/names';
 import { DataType, Employee, StatusValue, STATUS_VALUES, CellValue } from '../lib/types';
 import { employeeVisibleOnStaffField } from '../lib/staffRoles';
 import { useBadgeColors, useBadgeColorMutations } from '../hooks/useBadgeColors';
@@ -319,7 +320,7 @@ export default function CellFieldEditor({
       const outsiderIds = new Set([...elsewhere, ...others].map((e) => e.id));
       const term = search.trim().toLowerCase();
       const roleFiltered = [...byRole(employees), ...elsewhere, ...(showAll ? byRole(others) : [])];
-      const visibleEmployees = term ? roleFiltered.filter((e) => e.name.toLowerCase().includes(term)) : roleFiltered;
+      const visibleEmployees = term ? roleFiltered.filter((e) => matchesName(e, term)) : roleFiltered;
       const selectedOutsiders = [...elsewhere, ...others].filter((e) => state.staffIds.includes(e.id));
       return (
         <div>
@@ -364,8 +365,8 @@ export default function CellFieldEditor({
                       const next = e.target.checked;
                       if (next && outsider) {
                         const ok = await confirm({
-                          title: `Add ${emp.name} from another campus?`,
-                          message: `${emp.name} isn't assigned to ${campusName ?? 'this campus'}. They'll be scheduled here for this shift only — their campus assignment isn't changed.`,
+                          title: `Add ${scheduleName(emp)} from another campus?`,
+                          message: `${scheduleName(emp)} isn't assigned to ${campusName ?? 'this campus'}. They'll be scheduled here for this shift only — their campus assignment isn't changed.`,
                           confirmLabel: 'Add to shift',
                           destructive: false,
                         });
@@ -374,7 +375,7 @@ export default function CellFieldEditor({
                       onChange({ ...state, staffIds: next ? [...state.staffIds, emp.id] : state.staffIds.filter((id) => id !== emp.id) });
                     }}
                   />
-                  <span className={off ? 'line-through' : ''}>{emp.name}</span>
+                  <span className={off ? 'line-through' : ''} title={emp.preferredName ? emp.name : undefined}>{scheduleName(emp)}</span>
                   {outsider && (
                     <span
                       title={emp.campuses?.length ? `Assigned to: ${emp.campuses.map((c) => c.name).join(', ')}` : 'Not assigned to this campus'}
@@ -399,7 +400,7 @@ export default function CellFieldEditor({
           </div>
           {selectedOutsiders.length > 0 && (
             <p className="mt-2 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-xs text-amber-800">
-              <span className="font-medium">{selectedOutsiders.map((e) => e.name).join(', ')}</span> {selectedOutsiders.length === 1 ? 'is' : 'are'} from another campus — scheduled on this shift only; their campus assignment isn't changed.
+              <span className="font-medium">{selectedOutsiders.map((e) => scheduleName(e)).join(', ')}</span> {selectedOutsiders.length === 1 ? 'is' : 'are'} from another campus — scheduled on this shift only; their campus assignment isn't changed.
             </p>
           )}
         </div>
