@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useState } from 'react';
 import Modal from './Modal';
 import CellFieldEditor, {
   CellFieldState,
@@ -17,7 +17,6 @@ import { api } from '../lib/api';
 import { useConfirm } from './ConfirmProvider';
 import { Employee, Shift, SESSION_TYPES, SubRow } from '../lib/types';
 import { DATA_TYPE_INFO } from '../lib/constants';
-import { collectStaffFieldLabels } from '../lib/staffRoles';
 import { timeRangesOverlap } from '../lib/lanes';
 
 interface Props {
@@ -58,7 +57,6 @@ export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSa
   const otherCampusEmployees = canCrossCampus ? (allEmployeesData?.employees ?? []).filter((e) => !employees.some((x) => x.id === e.id)) : [];
   const campusName = campusData?.campuses.find((c) => c.id === section?.campusId)?.name;
   const shifts = shiftsData?.shifts ?? [];
-  const knownStaffLabels = useMemo(() => collectStaffFieldLabels(layout?.sections ?? []), [layout]);
 
   const blockStart = shift.startTime;
   const blockEnd = shift.endTime;
@@ -311,7 +309,6 @@ export default function EditShiftBlockModal({ shift, subRow, date, onClose, onSa
                     onChange={(next) => setRowState(sr.id, next)}
                     employees={employees}
                     subRowLabel={sr.label}
-                    knownStaffLabels={knownStaffLabels}
                     offEmployeeIds={offEmployeeIds}
                     otherCampusEmployees={otherCampusEmployees}
                     assignedElsewhere={assignedElsewhere(sr.id)}

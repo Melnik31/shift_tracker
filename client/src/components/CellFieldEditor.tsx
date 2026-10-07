@@ -77,11 +77,9 @@ interface Props {
   state: CellFieldState;
   onChange: (next: CellFieldState) => void;
   employees: Employee[];
-  // The Staff sub-row's own label, plus every Staff-field label used
-  // anywhere in the workspace — together decide which employees show up as
-  // assignable options (see lib/staffRoles.ts's employeeVisibleOnStaffField).
+  // The Staff sub-row's own label — only employees with a role of that name
+  // show up as assignable options (see lib/staffRoles.ts).
   subRowLabel?: string;
-  knownStaffLabels?: Set<string>;
   onKeyDown?: (e: React.KeyboardEvent) => void;
   autoFocus?: boolean;
   // Employees with approved time off on this shift's date — shown grayed out
@@ -103,7 +101,6 @@ export default function CellFieldEditor({
   onChange,
   employees,
   subRowLabel,
-  knownStaffLabels,
   onKeyDown,
   autoFocus,
   offEmployeeIds,
@@ -314,7 +311,8 @@ export default function CellFieldEditor({
       // eslint-disable-next-line react-hooks/rules-of-hooks -- same reasoning as above.
       const confirm = useConfirm();
       const byRole = (list: Employee[]) =>
-        subRowLabel ? list.filter((e) => employeeVisibleOnStaffField(e.roles, subRowLabel, knownStaffLabels ?? new Set())) : list;
+        // Coaches already ticked stay listed even without the role, so an existing assignment can still be seen and removed.
+        subRowLabel ? list.filter((e) => state.staffIds.includes(e.id) || employeeVisibleOnStaffField(e.roles, subRowLabel)) : list;
       const elsewhere = assignedElsewhere ?? [];
       const elsewhereIds = new Set(elsewhere.map((e) => e.id));
       const others = (otherCampusEmployees ?? []).filter((e) => !elsewhereIds.has(e.id));
@@ -389,7 +387,15 @@ export default function CellFieldEditor({
                 </label>
               );
             })}
-            {visibleEmployees.length === 0 && <p className="text-xs text-slate-400 px-1 py-1">No employees match "{search}"</p>}
+            {visibleEmployees.length === 0 && (
+              <p className="text-xs text-slate-400 px-1 py-1">
+                {term
+                  ? `No employees match "${search}"`
+                  : subRowLabel
+                    ? `No coaches have the role "${subRowLabel}". Add that role to a coach in Manage Team.`
+                    : 'No employees to show.'}
+              </p>
+            )}
           </div>
           {selectedOutsiders.length > 0 && (
             <p className="mt-2 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-xs text-amber-800">

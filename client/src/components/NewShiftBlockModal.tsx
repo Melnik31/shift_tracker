@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useState } from 'react';
 import SidePanel from './SidePanel';
 import CellFieldEditor, { CellFieldState, cellFieldPayload, emptyCellFieldState, isCellFieldStateFilled } from './CellFieldEditor';
 import { useLayout } from '../hooks/useLayout';
@@ -10,7 +10,6 @@ import { useBulkShiftMutation } from '../hooks/useShifts';
 import { api } from '../lib/api';
 import { BulkShiftRow, SESSION_TYPES } from '../lib/types';
 import { DATA_TYPE_INFO } from '../lib/constants';
-import { collectStaffFieldLabels } from '../lib/staffRoles';
 import { toMinutes, fromMinutes } from '../lib/time';
 
 // "New Shift Block": one date/startTime/endTime/sessionType entered once,
@@ -52,7 +51,6 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
   const employees = employeesData?.employees ?? [];
   const otherCampusEmployees = canCrossCampus ? (allEmployeesData?.employees ?? []).filter((e) => !employees.some((x) => x.id === e.id)) : [];
   const campusName = campusData?.campuses.find((c) => c.id === section?.campusId)?.name;
-  const knownStaffLabels = useMemo(() => collectStaffFieldLabels(layout?.sections ?? []), [layout]);
 
   // Defaults End to an hour after whatever Start the user just picked —
   // clamped so a late start (e.g. 23:30) can't produce an invalid "24:30".
@@ -264,7 +262,6 @@ export default function NewShiftBlockModal({ date, onClose }: { date: string; on
                     onChange={(next) => setRowState(sr.id, next)}
                     employees={employees}
                     subRowLabel={sr.label}
-                    knownStaffLabels={knownStaffLabels}
                     offEmployeeIds={offEmployeeIds}
                     otherCampusEmployees={otherCampusEmployees}
                     campusName={campusName}
