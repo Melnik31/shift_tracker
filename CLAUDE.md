@@ -28,7 +28,7 @@ npx tsc -b                        # client typecheck (run from client/)
 
 ## Conventions
 
-- **Migrations**: hand-author SQL matching the existing style — `-- AlterTable`/`-- CreateTable`/`-- CreateIndex`/`-- AddForeignKey` comments, `ON DELETE RESTRICT ON UPDATE CASCADE` on foreign keys. Match the patterns already in `server/prisma/migrations/`.
+- **Migrations**: hand-author SQL matching the existing style — `-- AlterTable`/`-- CreateTable`/`-- CreateIndex`/`-- AddForeignKey` comments, `ON DELETE RESTRICT ON UPDATE CASCADE` on foreign keys. Match the patterns already in `server/prisma/migrations/`. **Every new table must also `ENABLE ROW LEVEL SECURITY` in the same migration** (no policies needed — the app connects as the table owner, which bypasses RLS; this just closes Supabase's public REST API).
 - **Server tests**: Vitest + Supertest, run against a real Postgres instance (not mocked) — see any `server/src/routes/*.test.ts` for the pattern.
 - **Client tests**: Vitest only, currently pure-logic unit tests (`client/src/lib/*.test.ts`) — there is no component/interaction test setup (no jsdom, no Testing Library) and no E2E framework yet. Follow the existing `describe`/`it`/`expect` style when adding more.
 - **Scoping**: any new query touching `Shift`, `CellValue`, `Employee`, or similar tenant data must go through `campusScope.ts`/`ownership.ts`, not an ad hoc `where` clause.
